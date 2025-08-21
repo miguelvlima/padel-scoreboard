@@ -27,42 +27,38 @@ class ScoreManager {
     }
     state.score['sets'] = sets;
 
-    // 4) Contagem de sets concluídos e vitórias
-    int finishedCount = 0, won1 = 0, won2 = 0;
-    for (final s in sets) {
-      final t1 = (s['team1'] as int?) ?? 0;
-      final t2 = (s['team2'] as int?) ?? 0;
-      final finished = t1 >= state.gamesToWinSet || t2 >= state.gamesToWinSet;
-      if (finished) {
-        finishedCount++;
-        if (t1 >= state.gamesToWinSet) won1++;
-        if (t2 >= state.gamesToWinSet) won2++;
-      }
-    }
-    state.currentSet = finishedCount;
+    // 4) Contagem de sets CONCLUÍDOS (usa _isSetConcluded) e vitórias por equipa
+    final finishedSets = sets.where((s) => _isSetConcluded(s)).toList();
+    state.currentSet = finishedSets.length;
 
-    // 5) Match over derivado
+    final won1 = finishedSets.where((s) => ((s['team1'] as int?) ?? 0) > ((s['team2'] as int?) ?? 0)).length;
+    final won2 = finishedSets.where((s) => ((s['team2'] as int?) ?? 0) > ((s['team1'] as int?) ?? 0)).length;
+
+    // Atualiza matchOver com base em sets GANHOS
     state.matchOver = (won1 >= state.setsToWinMatch) || (won2 >= state.setsToWinMatch);
     if (state.matchOver) {
       state.inTieBreak = false;
       state.score['current'] = {}; // não mostrar "Atual"
       return;
     }
+
+    // 5) Super TB ativo? (3.º “set” em formatos super com 1–1)
     if (!state.matchOver && state.superTieBreak) {
       final active = _isSuperTBActive();
       state.inTieBreak = active; // força TB no 3.º “set”
       if (active) {
         final cur = (state.score['current'] as Map?) ?? const {};
         state.score['current'] = {
-          'games_team1': 0, 'games_team2': 0, // ignorados no super TB
+          'games_team1': 0, 'games_team2': 0,  // ignorados no super TB
           'points_team1': 0, 'points_team2': 0,
           'tb_team1': (cur['tb_team1'] as int?) ?? 0,
           'tb_team2': (cur['tb_team2'] as int?) ?? 0,
         };
+        return; // já estamos em super TB — não reavaliar tie-break normal
       }
     }
 
-    // 6) Preservar 'current'
+    // 6) Preservar/Completar 'current'
     final current = (state.score['current'] as Map?) ?? const {};
     state.score['current'] = {
       'games_team1': (current['games_team1'] as int?) ?? 0,
@@ -73,10 +69,17 @@ class ScoreManager {
       'tb_team2': (current['tb_team2'] as int?) ?? 0,
     };
 
-    // 7) Tie-break ativo só se ambos chegaram ao limite de jogos no set atual
+    // 7) Tie-break NORMAL ativo só se o set atual está 6–6
     final g1 = state.score['current']['games_team1'] as int? ?? 0;
     final g2 = state.score['current']['games_team2'] as int? ?? 0;
     state.inTieBreak = (g1 == state.gamesToWinSet && g2 == state.gamesToWinSet);
+  }
+
+
+  bool _isSetConcluded(Map s) {
+    final t1 = (s['team1'] as int?) ?? 0;
+    final t2 = (s['team2'] as int?) ?? 0;
+    return (t1 != t2) && ((t1 >= state.gamesToWinSet) || (t2 >= state.gamesToWinSet));
   }
 
   String pointsText(int teamNum) {
@@ -186,12 +189,10 @@ class ScoreManager {
     final v  = state.score["current"][key] as int;
     final ov = state.score["current"]["tb_team$other"] as int? ?? 0;
 
-    final target = _isSuperTBActive() ? 10 : 7; // super TB até 10, dif. 2
+    final target = _isSuperTBActive() ? 10 : 7;
     if (v >= target && (v - ov) >= 2) {
-      winSet(team);                 // fecha o “set” (3.º é o super TB)
-      state.inTieBreak = false;
-      state.score["current"]["tb_team1"] = 0;
-      state.score["current"]["tb_team2"] = 0;
+      winSet(team);   // <-- só isto
+      return;         // NÃO mexer em state.inTieBreak nem zerar tb aqui
     }
   }
 
@@ -250,79 +251,84 @@ class ScoreManager {
   void winSet(int team) {
     if (state.matchOver) return;
 
+    final wasTB = state.inTieBreak;
+
+    // snapshot antes de qualquer limpeza
+    final curG1  = (state.score["current"]?["games_team1"] as int?) ?? 0;
+    final curG2  = (state.score["current"]?["games_team2"] as int?) ?? 0;
+    final curTB1 = (state.score["current"]?["tb_team1"]    as int?) ?? 0;
+    final curTB2 = (state.score["current"]?["tb_team2"]    as int?) ?? 0;
+
     final sets = (state.score['sets'] as List).cast<Map>();
     if (sets.length <= state.currentSet) {
       sets.add({'team1': 0, 'team2': 0});
     }
 
-    // Fechar set: se for super TB ativo, gravar os pontos do TB; senão, os jogos
-    if (state.inTieBreak && _isSuperTBActive()) {
-      final tb1 = (state.score["current"]?["tb_team1"] as int?) ?? 0;
-      final tb2 = (state.score["current"]?["tb_team2"] as int?) ?? 0;
-      sets[state.currentSet]['team1'] = tb1;
-      sets[state.currentSet]['team2'] = tb2;
+    // Fechar set: TB normal vs Super TB vs jogos normais
+    if (wasTB) {
+      final isSuperTB = _isSuperTBActive();
+      if (isSuperTB) {
+        // SUPER TB: gravar pontos do TB como resultado do 3.º “set”
+        sets[state.currentSet]['team1'] = curTB1;
+        sets[state.currentSet]['team2'] = curTB2;
+      } else {
+        // TIE-BREAK NORMAL (6–6): resultado 7–6 para o vencedor
+        final win  = team == 1 ? 'team1' : 'team2';
+        final lose = team == 1 ? 'team2' : 'team1';
+        sets[state.currentSet][win]  = state.gamesToWinSet + 1; // 7
+        sets[state.currentSet][lose] = state.gamesToWinSet;     // 6
+      }
     } else {
-      final g1 = (state.score["current"]?["games_team1"] as int?) ?? 0;
-      final g2 = (state.score["current"]?["games_team2"] as int?) ?? 0;
-      sets[state.currentSet]['team1'] = g1;
-      sets[state.currentSet]['team2'] = g2;
+      // Jogo normal (sem TB): fechar com jogos correntes
+      sets[state.currentSet]['team1'] = curG1;
+      sets[state.currentSet]['team2'] = curG2;
     }
 
-    // Recalcular match over
-    final won1 = sets.where((s) => ((s['team1'] as int?) ?? 0) >= state.gamesToWinSet).length;
-    final won2 = sets.where((s) => ((s['team2'] as int?) ?? 0) >= state.gamesToWinSet).length;
+    // Recalcular match over e nº de sets concluídos (SEM incrementar manualmente)
+    final won1 = _wonSetsForTeam(1);
+    final won2 = _wonSetsForTeam(2);
     state.matchOver = (won1 >= state.setsToWinMatch) || (won2 >= state.setsToWinMatch);
 
-    final finishedCount = sets.where((s) {
-      final t1 = (s['team1'] as int?) ?? 0;
-      final t2 = (s['team2'] as int?) ?? 0;
-      return t1 >= state.gamesToWinSet || t2 >= state.gamesToWinSet;
-    }).length;
-    state.currentSet = finishedCount;
+    state.currentSet = ((state.score['sets'] as List).cast<Map>())
+        .where(_isSetConcluded)
+        .length;
 
-    // Limpezas & próximo passo
+    // Limpezas
     state.inTieBreak = false;
 
     if (state.matchOver) {
-      // Remove trailing 0–0 se existir e limpa current
-      while (sets.isNotEmpty) {
-        final last = sets.last;
+      // remove trailing 0–0 e limpa current
+      final setsList = (state.score['sets'] as List).cast<Map>();
+      while (setsList.isNotEmpty) {
+        final last = setsList.last;
         final t1 = (last['team1'] as int?) ?? 0;
         final t2 = (last['team2'] as int?) ?? 0;
-        if (t1 == 0 && t2 == 0) { sets.removeLast(); continue; }
+        if (t1 == 0 && t2 == 0) { setsList.removeLast(); continue; }
         break;
       }
       state.score['current'] = {};
       return;
     }
 
-    // SUPER TIE-BREAK (3.º set por pontos até 10, diferença 2)
-    if (_isSuperTBActive()) {
-      // Avança o índice para o 3.º "set", mas NÃO prepara jogos
-      state.currentSet += 1;
-      final maxSets = state.setsToWinMatch * 2 - 1;
-      if (state.currentSet > maxSets - 1) state.currentSet = maxSets - 1;
-
+    // Se ficou 1–1 e o formato é super, preparar o 3.º como SUPER TB (sem mexer currentSet)
+    if (state.superTieBreak && won1 == 1 && won2 == 1) {
       state.inTieBreak = true;
       state.score["current"] = {
         "games_team1": 0, "games_team2": 0, // ignorados no super TB
         "points_team1": 0, "points_team2": 0,
         "tb_team1": 0, "tb_team2": 0,
       };
-      return; // NÃO criar placeholder de jogos; o 3.º é TB
+      return; // sem placeholder de jogos
     }
 
-    // Próximo set (caso ainda haja)
-    state.currentSet += 1;
-    final maxSets = state.setsToWinMatch * 2 - 1;
-    if (state.currentSet > maxSets - 1) state.currentSet = maxSets - 1;
-
+    // Próximo set NORMAL: apenas reset do 'current' (NÃO alterar currentSet!)
     state.score["current"] = {
       "games_team1": 0, "games_team2": 0,
       "points_team1": 0, "points_team2": 0,
       "tb_team1": 0, "tb_team2": 0,
     };
   }
+
 
 
 
@@ -334,18 +340,15 @@ class ScoreManager {
 
   bool _isSuperTBActive() {
     if (!state.superTieBreak || state.matchOver) return false;
-    final sets = (state.score['sets'] as List?)?.cast<Map>() ?? const [];
-    final won1 = sets.where((s) => ((s['team1'] as int?) ?? 0) >= state.gamesToWinSet).length;
-    final won2 = sets.where((s) => ((s['team2'] as int?) ?? 0) >= state.gamesToWinSet).length;
-    // best-of-3 => super TB quando está 1–1 em sets
-    return won1 == 1 && won2 == 1;
+    final w1 = _wonSetsForTeam(1);
+    final w2 = _wonSetsForTeam(2);
+    return w1 == 1 && w2 == 1; // só no 3.º set, 1–1
   }
 
   void _recomputeMatchOver() {
-    final sets = (state.score['sets'] as List?)?.cast<Map>() ?? const [];
-    final won1 = sets.where((s) => ((s['team1'] as int?) ?? 0) >= state.gamesToWinSet).length;
-    final won2 = sets.where((s) => ((s['team2'] as int?) ?? 0) >= state.gamesToWinSet).length;
-    state.matchOver = (won1 >= state.setsToWinMatch) || (won2 >= state.setsToWinMatch);
+    final w1 = _wonSetsForTeam(1);
+    final w2 = _wonSetsForTeam(2);
+    state.matchOver = (w1 >= state.setsToWinMatch) || (w2 >= state.setsToWinMatch);
   }
 
   void sanitizeForSave() {
@@ -371,6 +374,20 @@ class ScoreManager {
     if (state.matchOver) {
       state.score['current'] = {}; // não gravar “Atual” depois de acabar
     }
+  }
+
+  int _wonSetsForTeam(int team) {
+    final sets = (state.score['sets'] as List?)?.cast<Map>() ?? const [];
+    int won = 0;
+    for (final s in sets) {
+      final t1 = (s['team1'] as int?) ?? 0;
+      final t2 = (s['team2'] as int?) ?? 0;
+      final finished = (t1 >= state.gamesToWinSet) || (t2 >= state.gamesToWinSet);
+      if (!finished) continue;
+      if (team == 1 && t1 > t2) won++;
+      if (team == 2 && t2 > t1) won++;
+    }
+    return won;
   }
 
 }

@@ -21,17 +21,26 @@ class ScoreBoard extends StatelessWidget {
     // Máximo de sets jogados para o formato: best-of-N ⇒ 2N−1
     final maxSets = state.setsToWinMatch * 2 - 1;
 
-    // Só sets CONCLUÍDOS (usamos o índice lógico currentSet já calculado no manager)
+    // Só sets concluídos (o manager calcula state.currentSet)
     final finishedCount = state.currentSet.clamp(0, maxSets);
     final finishedSets = <Map>[
       for (int i = 0; i < rawSets.length && i < finishedCount; i++)
         (rawSets[i] as Map),
     ];
 
-    // Mostrar “Atual”?
-    final showCurrentChip = !state.matchOver &&
-        finishedSets.length < maxSets &&
-        current.isNotEmpty;
+    // Super TB só quando: formato super, estamos em TB e cada equipa venceu 1 set
+    final won1 = rawSets.where((s) {
+      final m = (s as Map);
+      return (m['team1'] ?? 0) >= state.gamesToWinSet && (m['team1'] ?? 0) > (m['team2'] ?? 0);
+    }).length;
+    final won2 = rawSets.where((s) {
+      final m = (s as Map);
+      return (m['team2'] ?? 0) >= state.gamesToWinSet && (m['team2'] ?? 0) > (m['team1'] ?? 0);
+    }).length;
+    final isSuperTBNow = state.superTieBreak && !state.matchOver && state.inTieBreak && won1 == 1 && won2 == 1;
+
+    // Mostrar chips do “set atual” (6–6) e do TB?
+    final canShowCurrent = !state.matchOver && current.isNotEmpty && finishedSets.length < maxSets;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -44,38 +53,32 @@ class ScoreBoard extends StatelessWidget {
               Chip(
                 label: Text(
                   (state.superTieBreak &&
-                      finishedSets.length == (state.setsToWinMatch * 2 - 1) && // ex.: best-of-3 => 3
-                      i == finishedSets.length - 1)                             // último chip
+                      finishedSets.length == maxSets &&
+                      i == finishedSets.length - 1)
                       ? 'Super TB: ${finishedSets[i]['team1']} - ${finishedSets[i]['team2']}'
                       : 'Set ${i + 1}: ${finishedSets[i]['team1']} - ${finishedSets[i]['team2']}',
                 ),
               ),
 
-            // Chip do set atual (apenas se fizer sentido)
-            if (showCurrentChip)
-              Chip(
-                label: Text(
-                  state.inTieBreak
-                      ? (state.superTieBreak
-                      ? 'Super TB: $tb1 - $tb2'
-                      : 'Tie-break: $tb1 - $tb2')
-                      : 'Atual: $g1 - $g2',
-                ),
-              ),
+            // ✅ No tie-break normal: manter o placar do set (ex.: 6–6)
+            if (canShowCurrent && state.inTieBreak && !isSuperTBNow)
+              Chip(label: Text('Set atual: $g1 - $g2')),
+
+            // ✅ Chip do TB (normal ou super)
+            if (canShowCurrent && state.inTieBreak)
+              Chip(label: Text(isSuperTBNow ? 'Super TB: $tb1 - $tb2' : 'Tie-break: $tb1 - $tb2')),
+
+            // ✅ Fora de TB: mostrar o parcial atual normalmente
+            if (canShowCurrent && !state.inTieBreak)
+              Chip(label: Text('Atual: $g1 - $g2')),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Text(
-              manager.pointsText(1),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            Text(
-              manager.pointsText(2),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(manager.pointsText(1), style: Theme.of(context).textTheme.titleMedium),
+            Text(manager.pointsText(2), style: Theme.of(context).textTheme.titleMedium),
           ],
         ),
       ],
