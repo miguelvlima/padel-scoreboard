@@ -1,4 +1,4 @@
-# padel_scoreboard
+# Padel Scoreboard
 
 A new Flutter project.
 
