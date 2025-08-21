@@ -36,19 +36,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
       'format': _selectedFormat,
       'admin_key': adminKey,
       'score': {
-        "current": {
-          "points_team1": 0,
-          "points_team2": 0,
-          "games_team1": 0,
-          "games_team2": 0,
-          "tb_team1": 0,
-          "tb_team2": 0,
-        },
-        "sets": [
-          {"team1": 0, "team2": 0},
-          {"team1": 0, "team2": 0},
-          {"team1": 0, "team2": 0},
-        ]
+        "sets": <Map<String, int>>[],   // ← sem placeholders
+        "current": <String, int>{},     // ← vazio até começar
       },
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -63,33 +52,30 @@ class _EventGamesPageState extends State<EventGamesPage> {
     final sets = List<Map<String, dynamic>>.from(score['sets'] ?? []);
     final current = Map<String, dynamic>.from(score['current'] ?? {});
 
-    List<String> summary = [];
-
-    for (var s in sets) {
-      int t1 = s['team1'] ?? 0;
-      int t2 = s['team2'] ?? 0;
-
-      // Se set concluído (algum jogo > 0) adiciona
-      if (t1 > 0 || t2 > 0) {
-        summary.add("$t1-$t2");
-      } else {
-        // Primeiro set ainda não jogado: adicionar apenas set em curso e interromper
-        int g1 = current['games_team1'] ?? 0;
-        int g2 = current['games_team2'] ?? 0;
-        summary.add("$g1-$g2");
-        break;
-      }
+    // Só sets concluídos (ignora 0-0)
+    final concluded = <String>[];
+    for (final s in sets) {
+      final t1 = (s['team1'] ?? 0) as int;
+      final t2 = (s['team2'] ?? 0) as int;
+      if (t1 == 0 && t2 == 0) break; // ignora placeholders/trailers
+      concluded.add('$t1-$t2');
     }
 
-    // Se não houver sets ainda, mostrar apenas o set atual
-    if (summary.isEmpty) {
-      int g1 = current['games_team1'] ?? 0;
-      int g2 = current['games_team2'] ?? 0;
-      summary.add("$g1-$g2");
+    if (concluded.isNotEmpty) {
+      return concluded.join(' | ');
     }
 
-    return summary.join(' | ');
+    // Se não há sets concluídos, mostra parcial atual se existir
+    if (current.isNotEmpty) {
+      final g1 = (current['games_team1'] ?? 0) as int;
+      final g2 = (current['games_team2'] ?? 0) as int;
+      return '$g1-$g2';
+    }
+
+    // Totalmente vazio → traço
+    return '-';
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -140,8 +126,35 @@ class _EventGamesPageState extends State<EventGamesPage> {
                 if (snapshot.hasError) {
                   return Center(child: Text('Erro ao carregar jogos: ${snapshot.error}'));
                 }
-                final games = snapshot.data ?? [];
-                if (games.isEmpty) return const Center(child: Text('Nenhum jogo criado.'));
+                final raw = snapshot.data ?? [];
+
+                // Normaliza e FILTRA linhas inválidas (evita cartões “vazios”)
+                final games = raw.where((g) {
+                  // 1) precisa de id
+                  final id = g['id']?.toString();
+                  if (id == null || id.isEmpty) return false;
+
+                  // 2) precisa dos 4 jogadores preenchidos
+                  final p1 = (g['player1'] ?? '').toString().trim();
+                  final p2 = (g['player2'] ?? '').toString().trim();
+                  final p3 = (g['player3'] ?? '').toString().trim();
+                  final p4 = (g['player4'] ?? '').toString().trim();
+                  if (p1.isEmpty || p2.isEmpty || p3.isEmpty || p4.isEmpty) return false;
+
+                  // 3) precisa de score com conteúdo
+                  final score = g['score'];
+                  if (score == null) return false;
+                  if (score is Map && score.isEmpty) return false;
+
+                  // (Se quiseres mostrar jogos acabados de criar mesmo com score vazio,
+                  //  remove a linha acima "if (score is Map && score.isEmpty) return false;")
+                  return true;
+                }).toList();
+
+                if (games.isEmpty) {
+                  return const Center(child: Text('Nenhum jogo criado.'));
+                }
+
 
                 return ListView.builder(
                   itemCount: games.length,
@@ -164,18 +177,26 @@ class _EventGamesPageState extends State<EventGamesPage> {
                       title: Text("$player1 / $player2 vs $player3 / $player4"),
                       subtitle: Text("Score: ${_scoreSummary(scoreJson)}"),
                       onTap: () {
+                        final id = g['id']?.toString();
+                        final score = g['score'] as Map<String, dynamic>?;
+                        if (id == null || id.isEmpty || score == null || score.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Jogo incompleto — não é possível abrir.')),
+                          );
+                          return;
+                        }
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => GameDetailPage(
-                              gameId: gameId,
-                              adminKey: adminKey,
-                              player1: player1,
-                              player2: player2,
-                              player3: player3,
-                              player4: player4,
-                              format: format,
-                              initialScore: scoreJson, // PASSAR O SCORE
+                              gameId: id,
+                              adminKey: g['admin_key'] ?? '',
+                              player1: g['player1'] ?? '',
+                              player2: g['player2'] ?? '',
+                              player3: g['player3'] ?? '',
+                              player4: g['player4'] ?? '',
+                              format: g['format'] ?? 'best_of_3',
+                              initialScore: Map<String, dynamic>.from(score),
                             ),
                           ),
                         );
