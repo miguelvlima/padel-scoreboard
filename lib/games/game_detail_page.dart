@@ -4,7 +4,7 @@ import 'widgets/score_board.dart';
 import 'widgets/team_column.dart';
 import 'widgets/end_match_dialog.dart';
 import 'logic/match_state.dart';
-import 'logic/score_manager.dart';
+import 'logic/score_manager/score_manager.dart';
 import 'logic/format_rules.dart';
 
 class GameDetailPage extends StatefulWidget {
@@ -113,7 +113,14 @@ class _GameDetailPageState extends State<GameDetailPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            ScoreBoard(state: state, manager: manager),
+            ScoreBoard(
+              state: state,
+              manager: manager,
+              onPersist: () async {
+                manager.sanitizeForSave();
+                await _updateScore(); // o teu método Supabase
+              },
+            ),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
