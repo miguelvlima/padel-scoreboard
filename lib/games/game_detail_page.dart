@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'widgets/score_board.dart';
 import 'widgets/team_column.dart';
 import 'widgets/end_match_dialog.dart';
+import 'widgets/app_footer.dart';
+
 import 'logic/match_state.dart';
 import 'logic/score_manager/score_manager.dart';
 import 'logic/format_rules.dart';
@@ -39,7 +42,7 @@ class _GameDetailPageState extends State<GameDetailPage> {
   final MatchState state = MatchState();
   late final ScoreManager manager = ScoreManager(state);
 
-  String? _courtName; // <- nome do court para mostrar
+  String? _courtName;
 
   @override
   void initState() {
@@ -52,12 +55,10 @@ class _GameDetailPageState extends State<GameDetailPage> {
     } else {
       _loadScore();
     }
-
-    _loadCourtMeta(); // carrega o nome do court
+    _loadCourtMeta();
   }
 
-  // --- zona meta (court + formato) ---
-
+  // ---------------- Meta (court + formato) ----------------
   Future<void> _loadCourtMeta() async {
     try {
       final game = await supabase
@@ -97,6 +98,7 @@ class _GameDetailPageState extends State<GameDetailPage> {
     }
   }
 
+  // ---------------- Persistência ----------------
   Future<void> _updateScore() async {
     manager.sanitizeForSave();
     await supabase
@@ -139,7 +141,7 @@ class _GameDetailPageState extends State<GameDetailPage> {
     );
   }
 
-  // ========= Reset com confirmação =========
+  // ---------------- Reset com confirmação ----------------
   Future<void> _confirmAndResetMatch() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -169,28 +171,41 @@ class _GameDetailPageState extends State<GameDetailPage> {
     await _updateScore();
   }
 
+  // ---------------- UI helpers ----------------
+  Widget _bg({required Widget child}) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          colors: [Color(0xFF000000), Color(0xFF0A0B0D)],
+        ),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
+      // AppBar com duas linhas, auto-scale e tema escuro
       appBar: AppBar(
-        toolbarHeight: 72, // mais alto para 2 linhas
+        toolbarHeight: 72,
         titleSpacing: 8,
         title: FittedBox(
-          fit: BoxFit.scaleDown, // encolhe a fonte se for preciso
+          fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 '${widget.player1} / ${widget.player2}',
-                // fonte um pouco menor para caber mais
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
+                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18),
               ),
               Text(
                 '${widget.player3} / ${widget.player4}',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
+                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18),
               ),
             ],
           ),
@@ -208,78 +223,96 @@ class _GameDetailPageState extends State<GameDetailPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // ---------- NOVO: zona meta (campo + formato) ----------
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.place_outlined),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Campo', style: theme.textTheme.labelMedium),
-                          Text(
-                            _courtName ?? '—',
-                            style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
-                            maxLines: 3,          // permite 3 linhas
-                            softWrap: true,       // quebra natural
-                            overflow: TextOverflow.visible, // sem reticências
-                          ),
-                        ],
+
+      // Footer com copyright
+      bottomNavigationBar: const AppFooter(),
+
+      body: _bg(
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // --------- Meta card (campo + formato) com layout responsivo ---------
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      const Icon(Icons.place_outlined),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 160, maxWidth: 800),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Campo', style: theme.textTheme.labelMedium),
+                            Text(
+                              _courtName ?? '—',
+                              style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                              maxLines: 3,
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Chip(
-                      avatar: const Icon(Icons.rule, size: 18),
-                      label: Text(_formatLabel(widget.format)),
-                    ),
-                  ],
+                      Chip(
+                        avatar: const Icon(Icons.rule, size: 18),
+                        label: Text(_formatLabel(widget.format)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            // -------------------------------------------------------
+              const SizedBox(height: 12),
 
-            ScoreBoard(
-              state: state,
-              manager: manager,
-              onPersist: () async {
-                manager.sanitizeForSave();
-                await _updateScore();
-              },
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TeamColumn(
-                    name: "${widget.player1} / ${widget.player2}",
-                    onIncPoint: () { manager.incrementPoint(1); _updateScore(); setState(() {}); },
-                    onDecPoint: () { manager.decrementPoint(1); _updateScore(); setState(() {}); },
-                    onIncGame:  () { manager.adjustGameManually(1, true); _updateScore(); setState(() {}); },
-                    onDecGame:  () { manager.adjustGameManually(1, false); _updateScore(); setState(() {}); },
+              // --------- ScoreBoard (segue o teu widget; tema já trata o estilo) ---------
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: ScoreBoard(
+                    state: state,
+                    manager: manager,
+                    onPersist: () async {
+                      manager.sanitizeForSave();
+                      await _updateScore();
+                    },
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TeamColumn(
-                    name: "${widget.player3} / ${widget.player4}",
-                    onIncPoint: () { manager.incrementPoint(2); _updateScore(); setState(() {}); },
-                    onDecPoint: () { manager.decrementPoint(2); _updateScore(); setState(() {}); },
-                    onIncGame:  () { manager.adjustGameManually(2, true); _updateScore(); setState(() {}); },
-                    onDecGame:  () { manager.adjustGameManually(2, false); _updateScore(); setState(() {}); },
+              ),
+              const SizedBox(height: 16),
+
+              // --------- Controlo de pontos/jogos com cartões ---------
+              Text('Controlo', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TeamColumn(
+                      name: "${widget.player1} / ${widget.player2}",
+                      onIncPoint: () { manager.incrementPoint(1); _updateScore(); setState(() {}); },
+                      onDecPoint: () { manager.decrementPoint(1); _updateScore(); setState(() {}); },
+                      onIncGame:  () { manager.adjustGameManually(1, true); _updateScore(); setState(() {}); },
+                      onDecGame:  () { manager.adjustGameManually(1, false); _updateScore(); setState(() {}); },
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TeamColumn(
+                      name: "${widget.player3} / ${widget.player4}",
+                      onIncPoint: () { manager.incrementPoint(2); _updateScore(); setState(() {}); },
+                      onDecPoint: () { manager.decrementPoint(2); _updateScore(); setState(() {}); },
+                      onIncGame:  () { manager.adjustGameManually(2, true); _updateScore(); setState(() {}); },
+                      onDecGame:  () { manager.adjustGameManually(2, false); _updateScore(); setState(() {}); },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
