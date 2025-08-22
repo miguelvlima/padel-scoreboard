@@ -22,4 +22,24 @@ void _smSanitizeForSave(ScoreManager m) {
   if (m.state.matchOver) {
     m.state.score['current'] = {}; // não gravar “Atual” depois de acabar
   }
+
+}
+
+void _smResetMatch(ScoreManager m) {
+  // Estado base zerado, sem placeholders de sets
+  m.state.inTieBreak = false;
+  m.state.matchOver = false;
+  m.state.currentSet = 0;
+
+  m.state.score = {
+    'sets': <Map<String, int>>[],
+    'current': <String, int>{
+      'points_team1': 0,
+      'points_team2': 0,
+      'games_team1': 0,
+      'games_team2': 0,
+      'tb_team1': 0,
+      'tb_team2': 0,
+    },
+  };
 }

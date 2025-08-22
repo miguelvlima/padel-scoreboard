@@ -19,12 +19,61 @@ class _EventGamesPageState extends State<EventGamesPage> {
   final _p4 = TextEditingController();
   String _selectedFormat = 'best_of_3';
 
+  // Courts dropdown + mapping para mostrar na lista
+  List<Map<String, dynamic>> _courts = [];
+  Map<String, String> _courtNameById = {};
+  String? _selectedCourtId;
+  bool _loadingCourts = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCourts();
+  }
+
+  Future<void> _fetchCourts() async {
+    try {
+      final rows = await supabase
+          .from('courts')
+          .select('id, name')
+          .order('name');
+
+      final list = List<Map<String, dynamic>>.from(rows);
+      final map = <String, String>{
+        for (final c in list) (c['id'] as String): (c['name'] as String),
+      };
+
+      setState(() {
+        _courts = list;
+        _courtNameById = map;
+        _loadingCourts = false;
+      });
+    } catch (e) {
+      setState(() => _loadingCourts = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha a carregar courts: $e')),
+      );
+    }
+  }
+
   Future<void> _createGame() async {
     final player1 = _p1.text.trim();
     final player2 = _p2.text.trim();
     final player3 = _p3.text.trim();
     final player4 = _p4.text.trim();
-    if (player1.isEmpty || player2.isEmpty || player3.isEmpty || player4.isEmpty) return;
+
+    if (player1.isEmpty || player2.isEmpty || player3.isEmpty || player4.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Preenche os 4 jogadores.')),
+      );
+      return;
+    }
+    if (_selectedCourtId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escolhe o court.')),
+      );
+      return;
+    }
 
     final adminKey = DateTime.now().millisecondsSinceEpoch.toString();
     await supabase.from('games').insert({
@@ -34,10 +83,22 @@ class _EventGamesPageState extends State<EventGamesPage> {
       'player3': player3,
       'player4': player4,
       'format': _selectedFormat,
+      'court_id': _selectedCourtId, // grava court
       'admin_key': adminKey,
       'score': {
-        "sets": <Map<String, int>>[],   // ← sem placeholders
-        "current": <String, int>{},     // ← vazio até começar
+        "current": {
+          "points_team1": 0,
+          "points_team2": 0,
+          "games_team1": 0,
+          "games_team2": 0,
+          "tb_team1": 0,
+          "tb_team2": 0,
+        },
+        "sets": [
+          {"team1": 0, "team2": 0},
+          {"team1": 0, "team2": 0},
+          {"team1": 0, "team2": 0},
+        ]
       },
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -46,36 +107,33 @@ class _EventGamesPageState extends State<EventGamesPage> {
     _p2.clear();
     _p3.clear();
     _p4.clear();
+    setState(() => _selectedCourtId = null);
   }
 
   String _scoreSummary(Map<String, dynamic> score) {
     final sets = List<Map<String, dynamic>>.from(score['sets'] ?? []);
     final current = Map<String, dynamic>.from(score['current'] ?? {});
+    List<String> summary = [];
 
-    // Só sets concluídos (ignora 0-0)
-    final concluded = <String>[];
-    for (final s in sets) {
-      final t1 = (s['team1'] ?? 0) as int;
-      final t2 = (s['team2'] ?? 0) as int;
-      if (t1 == 0 && t2 == 0) break; // ignora placeholders/trailers
-      concluded.add('$t1-$t2');
+    for (var s in sets) {
+      int t1 = s['team1'] ?? 0;
+      int t2 = s['team2'] ?? 0;
+      if (t1 > 0 || t2 > 0) {
+        summary.add("$t1-$t2");
+      } else {
+        int g1 = current['games_team1'] ?? 0;
+        int g2 = current['games_team2'] ?? 0;
+        summary.add("$g1-$g2");
+        break;
+      }
     }
-
-    if (concluded.isNotEmpty) {
-      return concluded.join(' | ');
+    if (summary.isEmpty) {
+      int g1 = current['games_team1'] ?? 0;
+      int g2 = current['games_team2'] ?? 0;
+      summary.add("$g1-$g2");
     }
-
-    // Se não há sets concluídos, mostra parcial atual se existir
-    if (current.isNotEmpty) {
-      final g1 = (current['games_team1'] ?? 0) as int;
-      final g2 = (current['games_team2'] ?? 0) as int;
-      return '$g1-$g2';
-    }
-
-    // Totalmente vazio → traço
-    return '-';
+    return summary.join(' | ');
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +150,29 @@ class _EventGamesPageState extends State<EventGamesPage> {
                 TextField(controller: _p3, decoration: const InputDecoration(labelText: 'Jogador 3')),
                 TextField(controller: _p4, decoration: const InputDecoration(labelText: 'Jogador 4')),
                 const SizedBox(height: 8),
+
+                // Dropdown de court
+                _loadingCourts
+                    ? const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator()),
+                  ),
+                )
+                    : DropdownButtonFormField<String>(
+                  value: _selectedCourtId,
+                  decoration: const InputDecoration(labelText: 'Court'),
+                  items: _courts
+                      .map((c) => DropdownMenuItem<String>(
+                    value: c['id'] as String,
+                    child: Text(c['name'] as String),
+                  ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _selectedCourtId = v),
+                ),
+                const SizedBox(height: 8),
+
                 DropdownButton<String>(
                   value: _selectedFormat,
                   items: const [
@@ -126,42 +207,14 @@ class _EventGamesPageState extends State<EventGamesPage> {
                 if (snapshot.hasError) {
                   return Center(child: Text('Erro ao carregar jogos: ${snapshot.error}'));
                 }
-                final raw = snapshot.data ?? [];
-
-                // Normaliza e FILTRA linhas inválidas (evita cartões “vazios”)
-                final games = raw.where((g) {
-                  // 1) precisa de id
-                  final id = g['id']?.toString();
-                  if (id == null || id.isEmpty) return false;
-
-                  // 2) precisa dos 4 jogadores preenchidos
-                  final p1 = (g['player1'] ?? '').toString().trim();
-                  final p2 = (g['player2'] ?? '').toString().trim();
-                  final p3 = (g['player3'] ?? '').toString().trim();
-                  final p4 = (g['player4'] ?? '').toString().trim();
-                  if (p1.isEmpty || p2.isEmpty || p3.isEmpty || p4.isEmpty) return false;
-
-                  // 3) precisa de score com conteúdo
-                  final score = g['score'];
-                  if (score == null) return false;
-                  if (score is Map && score.isEmpty) return false;
-
-                  // (Se quiseres mostrar jogos acabados de criar mesmo com score vazio,
-                  //  remove a linha acima "if (score is Map && score.isEmpty) return false;")
-                  return true;
-                }).toList();
-
-                if (games.isEmpty) {
-                  return const Center(child: Text('Nenhum jogo criado.'));
-                }
-
+                final games = snapshot.data ?? [];
+                if (games.isEmpty) return const Center(child: Text('Nenhum jogo criado.'));
 
                 return ListView.builder(
                   itemCount: games.length,
                   itemBuilder: (context, index) {
                     final g = games[index];
 
-                    // Evitar nulls
                     final player1 = g['player1'] ?? '';
                     final player2 = g['player2'] ?? '';
                     final player3 = g['player3'] ?? '';
@@ -169,34 +222,51 @@ class _EventGamesPageState extends State<EventGamesPage> {
                     final format = g['format'] ?? 'best_of_3';
                     final adminKey = g['admin_key'] ?? '';
                     final gameId = g['id']?.toString() ?? '';
+                    final courtId = g['court_id']?.toString();
+                    final courtName = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
+
                     final scoreJson = g['score'] != null
                         ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
                         : <String, dynamic>{};
 
                     return ListTile(
-                      title: Text("$player1 / $player2 vs $player3 / $player4"),
-                      subtitle: Text("Score: ${_scoreSummary(scoreJson)}"),
+                      title: Text(
+                        "$player1 / $player2 vs $player3 / $player4",
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      isThreeLine: true, // dá espaço vertical extra para 2 linhas + 1 subtítulo
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "Court: $courtName",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                          ),
+                          Text(
+                            "Score: ${_scoreSummary(scoreJson)}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                          ),
+                        ],
+                      ),
                       onTap: () {
-                        final id = g['id']?.toString();
-                        final score = g['score'] as Map<String, dynamic>?;
-                        if (id == null || id.isEmpty || score == null || score.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Jogo incompleto — não é possível abrir.')),
-                          );
-                          return;
-                        }
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => GameDetailPage(
-                              gameId: id,
-                              adminKey: g['admin_key'] ?? '',
-                              player1: g['player1'] ?? '',
-                              player2: g['player2'] ?? '',
-                              player3: g['player3'] ?? '',
-                              player4: g['player4'] ?? '',
-                              format: g['format'] ?? 'best_of_3',
-                              initialScore: Map<String, dynamic>.from(score),
+                              gameId: gameId,
+                              adminKey: adminKey,
+                              player1: player1,
+                              player2: player2,
+                              player3: player3,
+                              player4: player4,
+                              format: format,
+                              initialScore: scoreJson,
                             ),
                           ),
                         );

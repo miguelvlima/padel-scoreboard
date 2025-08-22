@@ -1,3 +1,4 @@
+// widgets/team_column.dart
 import 'package:flutter/material.dart';
 
 class TeamColumn extends StatelessWidget {
@@ -18,26 +19,45 @@ class TeamColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(name, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(onPressed: onDecPoint, icon: const Icon(Icons.remove)),
-            IconButton(onPressed: onIncPoint, icon: const Icon(Icons.add)),
+            // Nome da dupla — 2 linhas com “...”
+            Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+
+            // Pontos
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(onPressed: onDecPoint, icon: const Icon(Icons.remove)),
+                const SizedBox(width: 8),
+                IconButton(onPressed: onIncPoint, icon: const Icon(Icons.add)),
+              ],
+            ),
+
+            // Jogos (ajuste manual)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(onPressed: onDecGame, icon: const Icon(Icons.exposure_neg_1)),
+                const SizedBox(width: 8),
+                IconButton(onPressed: onIncGame, icon: const Icon(Icons.exposure_plus_1)),
+              ],
+            ),
           ],
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(onPressed: onDecGame, icon: const Icon(Icons.arrow_downward)),
-            IconButton(onPressed: onIncGame, icon: const Icon(Icons.arrow_upward)),
-          ],
-        ),
-      ],
+      ),
     );
   }
 }

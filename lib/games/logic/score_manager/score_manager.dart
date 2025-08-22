@@ -22,6 +22,7 @@ class ScoreManager {
       _smAdjustGameManually(this, team, increment);
   void winSet(int team) => _smWinSet(this, team);
   void sanitizeForSave() => _smSanitizeForSave(this);
+  void resetMatch() => _smResetMatch(this);
 
   // NEW: preview if editing a set would require discarding trailing sets
   int? previewEditDiscardIndex(int index, int team1Val, int team2Val) =>

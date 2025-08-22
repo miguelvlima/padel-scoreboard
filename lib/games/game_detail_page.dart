@@ -39,6 +39,8 @@ class _GameDetailPageState extends State<GameDetailPage> {
   final MatchState state = MatchState();
   late final ScoreManager manager = ScoreManager(state);
 
+  String? _courtName; // <- nome do court para mostrar
+
   @override
   void initState() {
     super.initState();
@@ -50,12 +52,53 @@ class _GameDetailPageState extends State<GameDetailPage> {
     } else {
       _loadScore();
     }
+
+    _loadCourtMeta(); // carrega o nome do court
+  }
+
+  // --- zona meta (court + formato) ---
+
+  Future<void> _loadCourtMeta() async {
+    try {
+      final game = await supabase
+          .from('games')
+          .select('court_id')
+          .eq('id', widget.gameId)
+          .eq('admin_key', widget.adminKey)
+          .maybeSingle();
+
+      final courtId = game?['court_id'];
+      if (courtId == null) {
+        if (mounted) setState(() => _courtName = '—');
+        return;
+      }
+
+      final court = await supabase
+          .from('courts')
+          .select('name')
+          .eq('id', courtId)
+          .maybeSingle();
+
+      if (mounted) setState(() => _courtName = (court?['name'] as String?) ?? '—');
+    } catch (_) {
+      if (mounted) setState(() => _courtName = '—');
+    }
+  }
+
+  String _formatLabel(String fmt) {
+    switch (fmt) {
+      case 'best_of_3': return 'Best of 3';
+      case 'best_of_3_gp': return 'Best of 3 + GP';
+      case 'super_tiebreak': return 'Super Tiebreak';
+      case 'super_tiebreak_gp': return 'Super Tiebreak + GP';
+      case 'proset': return 'Pro Set';
+      case 'proset_gp': return 'Pro Set + GP';
+      default: return fmt;
+    }
   }
 
   Future<void> _updateScore() async {
-
     manager.sanitizeForSave();
-
     await supabase
         .from('games')
         .update({'score': state.score})
@@ -96,12 +139,68 @@ class _GameDetailPageState extends State<GameDetailPage> {
     );
   }
 
+  // ========= Reset com confirmação =========
+  Future<void> _confirmAndResetMatch() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Repor pontuações?'),
+        content: const Text(
+            'Isto vai apagar todos os sets e pontuações deste jogo e voltar a 0–0. '
+                'Queres continuar?'
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirmar')),
+        ],
+      ),
+    ) ?? false;
+
+    if (!ok) return;
+
+    setState(() {
+      state.matchOver = false;
+      state.inTieBreak = false;
+      state.currentSet = 0;
+      state.score = {};
+      manager.initializeCurrentSet();
+    });
+
+    await _updateScore();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.player1} / ${widget.player2}  vs  ${widget.player3} / ${widget.player4}'),
+        toolbarHeight: 72, // mais alto para 2 linhas
+        titleSpacing: 8,
+        title: FittedBox(
+          fit: BoxFit.scaleDown, // encolhe a fonte se for preciso
+          alignment: Alignment.centerLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.player1} / ${widget.player2}',
+                // fonte um pouco menor para caber mais
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
+              ),
+              Text(
+                '${widget.player3} / ${widget.player4}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
+              ),
+            ],
+          ),
+        ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.restart_alt),
+            onPressed: _confirmAndResetMatch,
+            tooltip: 'Reset ao jogo',
+          ),
           IconButton(
             icon: const Icon(Icons.flag),
             onPressed: _confirmEndMatch,
@@ -113,31 +212,70 @@ class _GameDetailPageState extends State<GameDetailPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            // ---------- NOVO: zona meta (campo + formato) ----------
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.place_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Campo', style: theme.textTheme.labelMedium),
+                          Text(
+                            _courtName ?? '—',
+                            style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                            maxLines: 3,          // permite 3 linhas
+                            softWrap: true,       // quebra natural
+                            overflow: TextOverflow.visible, // sem reticências
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Chip(
+                      avatar: const Icon(Icons.rule, size: 18),
+                      label: Text(_formatLabel(widget.format)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // -------------------------------------------------------
+
             ScoreBoard(
               state: state,
               manager: manager,
               onPersist: () async {
                 manager.sanitizeForSave();
-                await _updateScore(); // o teu método Supabase
+                await _updateScore();
               },
             ),
             const SizedBox(height: 16),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                TeamColumn(
-                  name: "${widget.player1} / ${widget.player2}",
-                  onIncPoint: () { manager.incrementPoint(1); _updateScore(); setState(() {}); },
-                  onDecPoint: () { manager.decrementPoint(1); _updateScore(); setState(() {}); },
-                  onIncGame:  () { manager.adjustGameManually(1, true); _updateScore(); setState(() {}); },
-                  onDecGame:  () { manager.adjustGameManually(1, false); _updateScore(); setState(() {}); },
+                Expanded(
+                  child: TeamColumn(
+                    name: "${widget.player1} / ${widget.player2}",
+                    onIncPoint: () { manager.incrementPoint(1); _updateScore(); setState(() {}); },
+                    onDecPoint: () { manager.decrementPoint(1); _updateScore(); setState(() {}); },
+                    onIncGame:  () { manager.adjustGameManually(1, true); _updateScore(); setState(() {}); },
+                    onDecGame:  () { manager.adjustGameManually(1, false); _updateScore(); setState(() {}); },
+                  ),
                 ),
-                TeamColumn(
-                  name: "${widget.player3} / ${widget.player4}",
-                  onIncPoint: () { manager.incrementPoint(2); _updateScore(); setState(() {}); },
-                  onDecPoint: () { manager.decrementPoint(2); _updateScore(); setState(() {}); },
-                  onIncGame:  () { manager.adjustGameManually(2, true); _updateScore(); setState(() {}); },
-                  onDecGame:  () { manager.adjustGameManually(2, false); _updateScore(); setState(() {}); },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TeamColumn(
+                    name: "${widget.player3} / ${widget.player4}",
+                    onIncPoint: () { manager.incrementPoint(2); _updateScore(); setState(() {}); },
+                    onDecPoint: () { manager.decrementPoint(2); _updateScore(); setState(() {}); },
+                    onIncGame:  () { manager.adjustGameManually(2, true); _updateScore(); setState(() {}); },
+                    onDecGame:  () { manager.adjustGameManually(2, false); _updateScore(); setState(() {}); },
+                  ),
                 ),
               ],
             ),
