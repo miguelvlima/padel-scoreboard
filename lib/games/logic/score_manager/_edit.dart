@@ -119,12 +119,14 @@ bool _smApplyFinishedSetResult(
     sets.removeAt(index);
     m.state.score['sets'] = sets;
 
+    // ⚠️ NÃO zerar os pontos do TB: usar os valores editados (t1/t2)
     m.state.inTieBreak = true;
     m.state.matchOver = false;
     m.state.score['current'] = {
-      "games_team1": 0, "games_team2": 0,
-      "points_team1": 0, "points_team2": 0,
-      "tb_team1": t1, "tb_team2": t2,
+      "games_team1": 0, "games_team2": 0,     // ignorados no super TB
+      "points_team1": 0, "points_team2": 0,   // não usados no super TB
+      "tb_team1": t1,                          // <-- manter pontos editados
+      "tb_team2": t2,                          // <-- manter pontos editados
     };
 
     m.state.currentSet =
