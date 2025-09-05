@@ -33,4 +33,7 @@ class ScoreManager {
       {bool allowDiscardTrailing = false}) =>
       _smApplyFinishedSetResult(this, index, team1Val, team2Val,
           allowDiscardTrailing: allowDiscardTrailing);
+
+  int? previewReopenDiscardIndex(int index, int team1Val, int team2Val) =>
+      _smPreviewReopenDiscardIndex(this, index, team1Val, team2Val);
 }

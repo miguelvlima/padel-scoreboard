@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 
 class TeamColumn extends StatelessWidget {
-  final String name;
   final VoidCallback onIncPoint;
   final VoidCallback onDecPoint;
   final VoidCallback onIncGame;
@@ -10,7 +9,6 @@ class TeamColumn extends StatelessWidget {
 
   const TeamColumn({
     super.key,
-    required this.name,
     required this.onIncPoint,
     required this.onDecPoint,
     required this.onIncGame,
@@ -72,16 +70,6 @@ class TeamColumn extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Nome da dupla
-            Text(
-              name,
-              style: theme.textTheme.titleMedium,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 12),
-
             // PONTOS (centrado)
             group(title: 'PONTOS', onDec: onDecPoint, onInc: onIncPoint),
 

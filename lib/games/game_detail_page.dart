@@ -221,25 +221,7 @@ class _GameDetailPageState extends State<GameDetailPage> {
     return Scaffold(
       // AppBar com duas linhas, auto-scale e tema escuro
       appBar: AppBar(
-        toolbarHeight: 72,
-        titleSpacing: 8,
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${widget.player1} / ${widget.player2}',
-                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18),
-              ),
-              Text(
-                '${widget.player3} / ${widget.player4}',
-                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18),
-              ),
-            ],
-          ),
-        ),
+        title: const Text(''),
         actions: [
           IconButton(
             icon: const Icon(Icons.restart_alt),
@@ -294,19 +276,21 @@ class _GameDetailPageState extends State<GameDetailPage> {
                       manager.sanitizeForSave();
                       await _updateScore();
                     },
+                    team1p1: widget.player1,
+                    team1p2: widget.player2,
+                    team2p1: widget.player3,
+                    team2p2: widget.player4,
                   ),
                 ),
               ),
               const SizedBox(height: 16),
 
               // --------- Controlo de pontos/jogos com cartões ---------
-              Text('Controlo', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: TeamColumn(
-                      name: "${widget.player1} / ${widget.player2}",
                       onIncPoint: () { manager.incrementPoint(1); _updateScore(); setState(() {}); },
                       onDecPoint: () { manager.decrementPoint(1); _updateScore(); setState(() {}); },
                       onIncGame:  () { manager.adjustGameManually(1, true); _updateScore(); setState(() {}); },
@@ -316,7 +300,6 @@ class _GameDetailPageState extends State<GameDetailPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: TeamColumn(
-                      name: "${widget.player3} / ${widget.player4}",
                       onIncPoint: () { manager.incrementPoint(2); _updateScore(); setState(() {}); },
                       onDecPoint: () { manager.decrementPoint(2); _updateScore(); setState(() {}); },
                       onIncGame:  () { manager.adjustGameManually(2, true); _updateScore(); setState(() {}); },
