@@ -19,6 +19,7 @@ class GameDetailPage extends StatefulWidget {
   final String player4;
   final String format;
   final Map<String, dynamic>? initialScore;
+  final DateTime? startAt;
 
   const GameDetailPage({
     super.key,
@@ -30,6 +31,7 @@ class GameDetailPage extends StatefulWidget {
     required this.player4,
     required this.format,
     this.initialScore,
+    this.startAt,
   });
 
   @override
@@ -43,11 +45,18 @@ class _GameDetailPageState extends State<GameDetailPage> {
   late final ScoreManager manager = ScoreManager(state);
 
   String? _courtName;
+  DateTime? _startAt;
+
+  String _two(int n) => n.toString().padLeft(2, '0');
+  String _fmtDateTimeShort(DateTime dtLocal) =>
+      '${_two(dtLocal.day)}/${_two(dtLocal.month)}/${dtLocal.year} ${_two(dtLocal.hour)}:${_two(dtLocal.minute)}';
 
   @override
   void initState() {
     super.initState();
     applyFormatRules(state, widget.format);
+
+    _startAt = widget.startAt;
 
     if (widget.initialScore != null && widget.initialScore!.isNotEmpty) {
       state.score = Map<String, dynamic>.from(widget.initialScore!);
@@ -56,7 +65,28 @@ class _GameDetailPageState extends State<GameDetailPage> {
       _loadScore();
     }
     _loadCourtMeta();
+
+    if (_startAt == null) _loadStartAt(); // ⬅️ opcional (caso não venha no push)
   }
+
+  Future<void> _loadStartAt() async {
+    try {
+      final row = await supabase
+          .from('games')
+          .select('start_at')
+          .eq('id', widget.gameId)
+          .eq('admin_key', widget.adminKey)
+          .maybeSingle();
+
+      final iso = row?['start_at'] as String?;
+      if (iso != null && mounted) {
+        setState(() => _startAt = DateTime.parse(iso).toLocal());
+      }
+    } catch (_) {
+      // silencioso
+    }
+  }
+
 
   // ---------------- Meta (court + formato) ----------------
   Future<void> _loadCourtMeta() async {
@@ -242,23 +272,7 @@ class _GameDetailPageState extends State<GameDetailPage> {
                     spacing: 12,
                     runSpacing: 6,
                     children: [
-                      const Icon(Icons.place_outlined),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 160, maxWidth: 800),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Campo', style: theme.textTheme.labelMedium),
-                            Text(
-                              _courtName ?? '—',
-                              style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
-                              maxLines: 3,
-                              softWrap: true,
-                              overflow: TextOverflow.visible,
-                            ),
-                          ],
-                        ),
-                      ),
+                      _campoHoraInline(theme), // ⬅️ Campo + Dia&Hora SEM QUEBRA, encolhe se necessário
                       Chip(
                         avatar: const Icon(Icons.rule, size: 18),
                         label: Text(_formatLabel(widget.format)),
@@ -317,4 +331,58 @@ class _GameDetailPageState extends State<GameDetailPage> {
       ),
     );
   }
+
+  Widget _campoHoraInline(ThemeData theme) {
+    final court = _courtName ?? '—';
+    final when  = widget.startAt != null
+        ? _fmtDateTimeShort(widget.startAt!.toLocal())
+        : '—';
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 260, maxWidth: 1200),
+      child: FittedBox( // encolhe para caber numa linha
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(Icons.place_outlined),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Campo', style: theme.textTheme.labelMedium),
+                Text(
+                  court,
+                  style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            const Icon(Icons.schedule_outlined),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Dia & hora', style: theme.textTheme.labelMedium),
+                Text(
+                  when,
+                  style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
 }

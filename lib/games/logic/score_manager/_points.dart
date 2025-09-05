@@ -13,12 +13,12 @@ String _smPointsText(ScoreManager m, int teamNum) {
 
   if (!m.state.gpRule) {
     // COM vantagem
-    if (p == 4 && opp == 3) return "Points: Ad"; // tens vantagem
-    if (p == 3 && opp == 4) return "Points: 40"; // adversário tem Ad, tu mostras 40
-    return "Points: ${m.state.pointValues[p.clamp(0, 3)]}"; // 0/15/30/40 (inclui deuce 40–40)
+    if (p == 4 && opp == 3) return "PONTOS: Ad"; // tens vantagem
+    if (p == 3 && opp == 4) return "PONTOS: 40"; // adversário tem Ad, tu mostras 40
+    return "PONTOS: ${m.state.pointValues[p.clamp(0, 3)]}"; // 0/15/30/40 (inclui deuce 40–40)
   } else {
     // Golden point
     final idx = p.clamp(0, 3);
-    return "Points: ${m.state.pointValues[idx]}";
+    return "PONTOS: ${m.state.pointValues[idx]}";
   }
 }

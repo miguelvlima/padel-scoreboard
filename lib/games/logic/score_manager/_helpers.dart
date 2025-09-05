@@ -73,3 +73,4 @@ void _smRecomputeMatchOver(ScoreManager m) {
   m.state.matchOver =
       (w1 >= m.state.setsToWinMatch) || (w2 >= m.state.setsToWinMatch);
 }
+

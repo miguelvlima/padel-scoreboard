@@ -69,6 +69,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
     final p4 = TextEditingController();
     String format = 'best_of_3';
     String? courtId = _courtNameById.keys.isNotEmpty ? _courtNameById.keys.first : null;
+    DateTime? startAt = DateTime.now(); // default: agora (o utilizador pode mudar)
 
     // lazy-load courts if empty
     if (_courtNameById.isEmpty) {
@@ -121,6 +122,25 @@ class _EventGamesPageState extends State<EventGamesPage> {
                       onChanged: (v) => setSheet(() => courtId = v),
                     ),
                     const SizedBox(height: 12),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event),
+                      title: const Text('Data & hora'),
+                      subtitle: Text(
+                        startAt != null
+                            ? _fmtDateTimeShort(startAt!)
+                            : '—',
+                      ),
+                      trailing: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_calendar),
+                        label: const Text('Escolher'),
+                        onPressed: () async {
+                          final picked = await _pickDateTime(context, startAt);
+                          if (picked != null) setSheet(() => startAt = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: format,
                       decoration: const InputDecoration(labelText: 'Formato'),
@@ -169,6 +189,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                               'player3': player3,
                               'player4': player4,
                               'format': format,
+                              'start_at': startAt?.toUtc().toIso8601String(), // <-- NOVO
                               'court_id': courtId,
                               'admin_key': adminKey,
                               'score': {
@@ -213,30 +234,86 @@ class _EventGamesPageState extends State<EventGamesPage> {
   }
   // -------------------------------------------
 
-  String _scoreSummary(Map<String, dynamic> score) {
-    final sets = List<Map<String, dynamic>>.from(score['sets'] ?? []);
-    final current = Map<String, dynamic>.from(score['current'] ?? {});
-    final parts = <String>[];
+  String _scoreSummary(Map<String, dynamic> score, String format) {
+    final isProset = format.startsWith('proset');
+    final isSuperFormat = format.startsWith('super_tiebreak');
+    final G = isProset ? 9 : 6;          // jogos para fechar set normal
+    final maxSets = isProset ? 1 : 3;    // nº máx de “sets” guardados
+    final setsToWin = isProset ? 1 : 2;  // sets para ganhar o jogo
 
-    for (final s in sets) {
-      final t1 = s['team1'] ?? 0;
-      final t2 = s['team2'] ?? 0;
-      if (t1 > 0 || t2 > 0) {
-        parts.add('$t1-$t2');
-      } else {
-        final g1 = current['games_team1'] ?? 0;
-        final g2 = current['games_team2'] ?? 0;
-        parts.add('$g1-$g2');
-        break;
+    final rawSets = List<Map<String, dynamic>>.from(score['sets'] ?? const []);
+    final current = Map<String, dynamic>.from(score['current'] ?? const {});
+
+    // helper: set concluído?
+    bool isFinishedSet(int t1, int t2, int index) {
+      final maxV = t1 > t2 ? t1 : t2;
+      final minV = t1 > t2 ? t2 : t1;
+      final diff = (t1 - t2).abs();
+
+      // Super TB só no último "set" em formatos super (≥10 e diferença ≥2)
+      if (isSuperFormat && index == maxSets - 1 && maxV >= 9) {
+        return (maxV >= 10) && (diff >= 2);
+      }
+      // Sets normais BO3 (G=6): 6–0..6–4, 7–5, 7–6
+      if (G == 6) {
+        if (maxV == 6 && diff >= 2) return true;
+        if (maxV == 7 && (minV == 5 || minV == 6)) return true;
+        return false;
+      }
+      // Proset (G=9 por dois)
+      return (maxV >= G) && (diff >= 2);
+    }
+
+    // filtra sets concluídos (e respeita limite do formato)
+    final finished = <Map<String, int>>[];
+    for (int i = 0; i < rawSets.length && i < maxSets; i++) {
+      final s = rawSets[i];
+      final t1 = (s['team1'] as num?)?.toInt() ?? 0;
+      final t2 = (s['team2'] as num?)?.toInt() ?? 0;
+      if (isFinishedSet(t1, t2, i)) {
+        finished.add({'team1': t1, 'team2': t2});
       }
     }
-    if (parts.isEmpty) {
-      final g1 = current['games_team1'] ?? 0;
-      final g2 = current['games_team2'] ?? 0;
-      parts.add('$g1-$g2');
+
+    // contagem de sets ganhos para saber se já acabou
+    int w1 = 0, w2 = 0;
+    for (final s in finished) {
+      if (s['team1']! > s['team2']!) w1++;
+      if (s['team2']! > s['team1']!) w2++;
     }
+    final matchOver = (w1 >= setsToWin) || (w2 >= setsToWin);
+
+    // monta as partes
+    final parts = <String>[
+      for (final s in finished) '${s['team1']}-${s['team2']}',
+    ];
+
+    if (!matchOver && current.isNotEmpty) {
+      final g1 = (current['games_team1'] as num?)?.toInt() ?? 0;
+      final g2 = (current['games_team2'] as num?)?.toInt() ?? 0;
+      final tb1 = (current['tb_team1'] as num?)?.toInt() ?? 0;
+      final tb2 = (current['tb_team2'] as num?)?.toInt() ?? 0;
+
+      // Super TB em curso: formatos super + 1–1 em sets
+      if (isSuperFormat && w1 == 1 && w2 == 1) {
+        parts.add('STB: $tb1-$tb2');
+      }
+      // Tie-break normal em curso: 6–6 (G==6)
+      else if (!isProset && g1 == G && g2 == G) {
+        parts.add('TB: $tb1-$tb2');
+      }
+      // Set normal em curso
+      else {
+        parts.add('$g1-$g2');
+      }
+    } else if (parts.isEmpty) {
+      // nada concluído e sem current -> mostra 0–0
+      parts.add('0-0');
+    }
+
     return parts.join(' | ');
   }
+
 
   Widget _bg({required Widget child}) {
     return Container(
@@ -529,6 +606,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         final gameId   = g['id']?.toString() ?? '';
                         final courtId  = g['court_id']?.toString();
                         final court    = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
+                        final startAtIso = g['start_at'] as String?;
+                        final startAt = startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
 
                         final scoreJson = g['score'] != null
                             ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
@@ -554,6 +633,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                   player4: p4,
                                   format: format,
                                   initialScore: scoreJson,
+                                  startAt: startAt,
                                 ),
                               ),
                             );
@@ -582,7 +662,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          'Score: ${_scoreSummary(scoreJson)}',
+                                          'Score: ${_scoreSummary(scoreJson, format)}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: Theme.of(context).textTheme.bodyLarge,
@@ -760,6 +840,39 @@ Future<void> _assignGameToBoard(String boardId, int position, String gameId) asy
     'position': position,
   }, onConflict: 'scoreboard_id,game_id');
 }
+
+Future<DateTime?> _pickDateTime(BuildContext context, DateTime? initial) async {
+  final now = DateTime.now();
+  final base = initial ?? now;
+
+  final date = await showDatePicker(
+    context: context,
+    initialDate: base,
+    firstDate: DateTime(now.year - 1),
+    lastDate: DateTime(now.year + 2),
+  );
+  if (date == null) return null;
+
+  final time = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.fromDateTime(base),
+  );
+  if (time == null) return null;
+
+  return DateTime(
+    date.year, date.month, date.day,
+    time.hour, time.minute,
+  );
+}
+
+String _two(int n) => n.toString().padLeft(2, '0');
+
+String _fmtDateTimeShort(DateTime dtLocal) {
+  final d = dtLocal;
+  // dd/MM/yyyy HH:mm
+  return '${_two(d.day)}/${_two(d.month)}/${d.year} ${_two(d.hour)}:${_two(d.minute)}';
+}
+
 
 
 
