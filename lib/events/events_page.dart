@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'event_games_page.dart';
+import '../app_capabilities.dart';
 import '../games/widgets/app_footer.dart';
 
 class EventsPage extends StatefulWidget {
-  const EventsPage({super.key});
+  final AppCapabilities caps;
+  const EventsPage({super.key, required this.caps});
 
   @override
   State<EventsPage> createState() => _EventsPageState();
@@ -14,6 +16,14 @@ class _EventsPageState extends State<EventsPage> {
   final sb = Supabase.instance.client;
 
   Future<void> _openCreateEventSheet() async {
+    // proteção extra: se não pode criar, nem abre o sheet
+    if (!widget.caps.canCreateEntities) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este modo não permite criar eventos.')),
+      );
+      return;
+    }
+
     final nameCtrl = TextEditingController();
 
     await showModalBottomSheet(
@@ -129,7 +139,11 @@ class _EventsPageState extends State<EventsPage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => EventGamesPage(eventId: id, eventName: name),
+                                builder: (_) => EventGamesPage(
+                                  eventId: id,
+                                  eventName: name,
+                                  caps: widget.caps, // ← usa o caps recebido
+                                ),
                               ),
                             );
                           },
@@ -165,18 +179,19 @@ class _EventsPageState extends State<EventsPage> {
             ),
           ),
 
-          // FAB pinned above the footer, always visible
-          Positioned(
-            right: 16,
-            bottom: 16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
-            child: FloatingActionButton.extended(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              onPressed: _openCreateEventSheet,
-              icon: const Icon(Icons.add),
-              label: const Text('Novo evento'),
+          // FAB: só mostra se o modo permitir criação
+          if (widget.caps.canCreateEntities)
+            Positioned(
+              right: 16,
+              bottom: 16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
+              child: FloatingActionButton.extended(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                onPressed: _openCreateEventSheet,
+                icon: const Icon(Icons.add),
+                label: const Text('Novo evento'),
+              ),
             ),
-          ),
         ],
       ),
     );

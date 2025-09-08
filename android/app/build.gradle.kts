@@ -20,20 +20,35 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Este applicationId é o "base". Os flavors abaixo vão sobrepor com IDs únicos.
         applicationId = "com.example.padel_scoreboard"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    // ---- FLAVORS ----
+    // Ter duas apps instaladas em paralelo: admin e viewer
+    flavorDimensions += "mode"
+    productFlavors {
+        create("admin") {
+            dimension = "mode"
+            applicationId = "com.nps.padel.admin"      // ← ID ÚNICO
+            versionNameSuffix = "-admin"
+            resValue("string", "app_name", "PS Admin") // ← nome da app (é usado no Manifest)
+        }
+        create("scorer") {
+            dimension = "mode"
+            applicationId = "com.nps.padel.scorer"     // ← ID ÚNICO
+            versionNameSuffix = "-scorer"
+            resValue("string", "app_name", "PS Scorer")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Assinatura: ajustar para as tuas chaves quando fores publicar
             signingConfig = signingConfigs.getByName("debug")
         }
     }

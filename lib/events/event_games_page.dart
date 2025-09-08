@@ -1,13 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../app_capabilities.dart';
 import '../games/game_detail_page.dart';
 import '../games/widgets/app_footer.dart';
 
 class EventGamesPage extends StatefulWidget {
   final String eventId;
   final String eventName;
-  const EventGamesPage({super.key, required this.eventId, required this.eventName});
+  final AppCapabilities caps;
+  const EventGamesPage({
+    super.key,
+    required this.eventId,
+    required this.eventName,
+    required this.caps,
+  });
 
   @override
   State<EventGamesPage> createState() => _EventGamesPageState();
@@ -51,18 +58,35 @@ class _EventGamesPageState extends State<EventGamesPage> {
 
   String _formatLabel(String fmt) {
     switch (fmt) {
-      case 'best_of_3': return 'Best of 3';
-      case 'best_of_3_gp': return 'Best of 3 + GP';
-      case 'super_tiebreak': return 'Super TB';
-      case 'super_tiebreak_gp': return 'Super TB + GP';
-      case 'proset': return 'Pro Set';
-      case 'proset_gp': return 'Pro Set + GP';
-      default: return fmt;
+      case 'best_of_3':
+        return 'Best of 3';
+      case 'best_of_3_gp':
+        return 'Best of 3 + GP';
+      case 'super_tiebreak':
+        return 'Super TB';
+      case 'super_tiebreak_gp':
+        return 'Super TB + GP';
+      case 'proset':
+        return 'Pro Set';
+      case 'proset_gp':
+        return 'Pro Set + GP';
+      default:
+        return fmt;
     }
   }
 
   // ------- creation sheet -------
   Future<void> _openCreateGameSheet() async {
+    // proteção: modo consulta não cria jogos
+    if (!widget.caps.canCreateEntities) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Este modo não permite criar jogos.')),
+        );
+      }
+      return;
+    }
+
     final p1 = TextEditingController();
     final p2 = TextEditingController();
     final p3 = TextEditingController();
@@ -77,7 +101,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
         final rows = await supabase.from('courts').select('id, name').order('name');
         final list = List<Map<String, dynamic>>.from(rows);
         if (list.isNotEmpty) {
-          _courtNameById = { for (final c in list) (c['id'] as String): (c['name'] as String) };
+          _courtNameById = {for (final c in list) (c['id'] as String): (c['name'] as String)};
           courtId = _courtNameById.keys.first;
           if (mounted) setState(() {});
         }
@@ -93,7 +117,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
           builder: (ctx, setSheet) {
             return Padding(
               padding: EdgeInsets.only(
-                left: 16, right: 16, top: 16,
+                left: 16,
+                right: 16,
+                top: 16,
                 bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
               ),
               child: SingleChildScrollView(
@@ -126,11 +152,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.event),
                       title: const Text('Data & hora'),
-                      subtitle: Text(
-                        startAt != null
-                            ? _fmtDateTimeShort(startAt!)
-                            : '—',
-                      ),
+                      subtitle: Text(startAt != null ? _fmtDateTimeShort(startAt!) : '—'),
                       trailing: OutlinedButton.icon(
                         icon: const Icon(Icons.edit_calendar),
                         label: const Text('Escolher'),
@@ -189,7 +211,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                               'player3': player3,
                               'player4': player4,
                               'format': format,
-                              'start_at': startAt?.toUtc().toIso8601String(), // <-- NOVO
+                              'start_at': startAt?.toUtc().toIso8601String(),
                               'court_id': courtId,
                               'admin_key': adminKey,
                               'score': {
@@ -237,34 +259,29 @@ class _EventGamesPageState extends State<EventGamesPage> {
   String _scoreSummary(Map<String, dynamic> score, String format) {
     final isProset = format.startsWith('proset');
     final isSuperFormat = format.startsWith('super_tiebreak');
-    final G = isProset ? 9 : 6;          // jogos para fechar set normal
-    final maxSets = isProset ? 1 : 3;    // nº máx de “sets” guardados
-    final setsToWin = isProset ? 1 : 2;  // sets para ganhar o jogo
+    final G = isProset ? 9 : 6;
+    final maxSets = isProset ? 1 : 3;
+    final setsToWin = isProset ? 1 : 2;
 
     final rawSets = List<Map<String, dynamic>>.from(score['sets'] ?? const []);
     final current = Map<String, dynamic>.from(score['current'] ?? const {});
 
-    // helper: set concluído?
     bool isFinishedSet(int t1, int t2, int index) {
       final maxV = t1 > t2 ? t1 : t2;
       final minV = t1 > t2 ? t2 : t1;
       final diff = (t1 - t2).abs();
 
-      // Super TB só no último "set" em formatos super (≥10 e diferença ≥2)
       if (isSuperFormat && index == maxSets - 1 && maxV >= 9) {
         return (maxV >= 10) && (diff >= 2);
       }
-      // Sets normais BO3 (G=6): 6–0..6–4, 7–5, 7–6
       if (G == 6) {
         if (maxV == 6 && diff >= 2) return true;
         if (maxV == 7 && (minV == 5 || minV == 6)) return true;
         return false;
       }
-      // Proset (G=9 por dois)
       return (maxV >= G) && (diff >= 2);
     }
 
-    // filtra sets concluídos (e respeita limite do formato)
     final finished = <Map<String, int>>[];
     for (int i = 0; i < rawSets.length && i < maxSets; i++) {
       final s = rawSets[i];
@@ -275,7 +292,6 @@ class _EventGamesPageState extends State<EventGamesPage> {
       }
     }
 
-    // contagem de sets ganhos para saber se já acabou
     int w1 = 0, w2 = 0;
     for (final s in finished) {
       if (s['team1']! > s['team2']!) w1++;
@@ -283,7 +299,6 @@ class _EventGamesPageState extends State<EventGamesPage> {
     }
     final matchOver = (w1 >= setsToWin) || (w2 >= setsToWin);
 
-    // monta as partes
     final parts = <String>[
       for (final s in finished) '${s['team1']}-${s['team2']}',
     ];
@@ -294,32 +309,26 @@ class _EventGamesPageState extends State<EventGamesPage> {
       final tb1 = (current['tb_team1'] as num?)?.toInt() ?? 0;
       final tb2 = (current['tb_team2'] as num?)?.toInt() ?? 0;
 
-      // Super TB em curso: formatos super + 1–1 em sets
       if (isSuperFormat && w1 == 1 && w2 == 1) {
         parts.add('STB: $tb1-$tb2');
-      }
-      // Tie-break normal em curso: 6–6 (G==6)
-      else if (!isProset && g1 == G && g2 == G) {
+      } else if (!isProset && g1 == G && g2 == G) {
         parts.add('TB: $tb1-$tb2');
-      }
-      // Set normal em curso
-      else {
+      } else {
         parts.add('$g1-$g2');
       }
     } else if (parts.isEmpty) {
-      // nada concluído e sem current -> mostra 0–0
       parts.add('0-0');
     }
 
     return parts.join(' | ');
   }
 
-
   Widget _bg({required Widget child}) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [Color(0xFF000000), Color(0xFF0A0B0D)],
         ),
       ),
@@ -354,7 +363,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.only(
-            left: 16, right: 16, top: 12,
+            left: 16,
+            right: 16,
+            top: 12,
             bottom: 12 + MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: FutureBuilder<_ScoreboardMembershipData>(
@@ -379,43 +390,47 @@ class _EventGamesPageState extends State<EventGamesPage> {
                           title: Text('Este jogo não está em nenhum scoreboard.'),
                         )
                       else
-                        ...data.memberships.map((m) => ListTile(
-                          leading: const Icon(Icons.tv),
-                          title: Text(m.boardTitle),
-                          subtitle: Text('Posição ${m.position}'),
-                          trailing: IconButton(
-                            tooltip: 'Remover deste scoreboard',
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: () async {
-                              try {
-                                await supabase
-                                    .from('scoreboard_selections')
-                                    .delete()
-                                    .eq('id', m.selectionId);
-                                final refreshed = await _loadMembershipAndBoards(gameId);
-                                setSheet(() {
-                                  data.memberships
-                                    ..clear()
-                                    ..addAll(refreshed.memberships);
-                                  data.boards
-                                    ..clear()
-                                    ..addAll(refreshed.boards);
-                                });
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Removido de "${m.boardTitle}".')),
-                                  );
+                        ...data.memberships.map(
+                              (m) => ListTile(
+                            leading: const Icon(Icons.tv),
+                            title: Text(m.boardTitle),
+                            subtitle: Text('Posição ${m.position}'),
+                            trailing: widget.caps.canCreateEntities
+                                ? IconButton(
+                              tooltip: 'Remover deste scoreboard',
+                              icon: const Icon(Icons.remove_circle_outline),
+                              onPressed: () async {
+                                try {
+                                  await supabase
+                                      .from('scoreboard_selections')
+                                      .delete()
+                                      .eq('id', m.selectionId);
+                                  final refreshed = await _loadMembershipAndBoards(gameId);
+                                  setSheet(() {
+                                    data.memberships
+                                      ..clear()
+                                      ..addAll(refreshed.memberships);
+                                    data.boards
+                                      ..clear()
+                                      ..addAll(refreshed.boards);
+                                  });
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Removido de "${m.boardTitle}".')),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Erro ao remover: $e')),
+                                    );
+                                  }
                                 }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Erro ao remover: $e')),
-                                  );
-                                }
-                              }
-                            },
+                              },
+                            )
+                                : null,
                           ),
-                        )),
+                        ),
 
                       const Divider(height: 20),
                       Align(
@@ -423,7 +438,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         child: FilledButton.icon(
                           icon: const Icon(Icons.add),
                           label: const Text('Adicionar a scoreboard'),
-                          onPressed: () async {
+                          onPressed: widget.caps.canCreateEntities
+                              ? () async {
                             final added = await _showAddToScoreboardSheet(gameId);
                             if (added == true) {
                               final refreshed = await _loadMembershipAndBoards(gameId);
@@ -436,7 +452,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                   ..addAll(refreshed.boards);
                               });
                             }
-                          },
+                          }
+                              : null,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -475,7 +492,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
           builder: (ctx, setSheet) {
             return Padding(
               padding: EdgeInsets.only(
-                left: 16, right: 16, top: 12,
+                left: 16,
+                right: 16,
+                top: 12,
                 bottom: 12 + MediaQuery.of(ctx).viewInsets.bottom,
               ),
               child: Column(
@@ -488,7 +507,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                     decoration: const InputDecoration(labelText: 'Scoreboard'),
                     items: boards.map<DropdownMenuItem<String>>((b) {
                       final title = (b['title'] as String?)?.trim();
-                      final key   = (b['key'] as String?)?.trim();
+                      final key = (b['key'] as String?)?.trim();
                       final label = (title?.isNotEmpty == true ? title! : key ?? 'Sem título');
                       return DropdownMenuItem(
                         value: b['id'] as String,
@@ -507,9 +526,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                   DropdownButtonFormField<int>(
                     value: positions.contains(selectedPos) ? selectedPos : (positions.isNotEmpty ? positions.first : null),
                     decoration: const InputDecoration(labelText: 'Posição'),
-                    items: positions
-                        .map((p) => DropdownMenuItem<int>(value: p, child: Text('Posição $p')))
-                        .toList(),
+                    items: positions.map((p) => DropdownMenuItem<int>(value: p, child: Text('Posição $p'))).toList(),
                     onChanged: (v) => setSheet(() => selectedPos = v),
                   ),
                   const SizedBox(height: 12),
@@ -556,7 +573,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Jogos — ${widget.eventName}', maxLines: 2, overflow: TextOverflow.ellipsis)),
+      appBar:
+      AppBar(title: Text('Jogos — ${widget.eventName}', maxLines: 2, overflow: TextOverflow.ellipsis)),
       bottomNavigationBar: const AppFooter(),
       body: Stack(
         children: [
@@ -578,7 +596,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Text('Erro a carregar jogos:\n${snapshot.error}', textAlign: TextAlign.center),
+                        child:
+                        Text('Erro a carregar jogos:\n${snapshot.error}', textAlign: TextAlign.center),
                       ),
                     );
                   }
@@ -589,7 +608,11 @@ class _EventGamesPageState extends State<EventGamesPage> {
 
                   return RefreshIndicator(
                     onRefresh: () async {
-                      await supabase.from('games').select('id').eq('event_id', widget.eventId).limit(1);
+                      await supabase
+                          .from('games')
+                          .select('id')
+                          .eq('event_id', widget.eventId)
+                          .limit(1);
                     },
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
@@ -603,22 +626,35 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         final p4 = g['player4'] ?? '';
                         final format = g['format'] ?? 'best_of_3';
                         final adminKey = g['admin_key'] ?? '';
-                        final gameId   = g['id']?.toString() ?? '';
-                        final courtId  = g['court_id']?.toString();
-                        final court    = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
+                        final gameId = g['id']?.toString() ?? '';
+                        final courtId = g['court_id']?.toString();
+                        final court = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
                         final startAtIso = g['start_at'] as String?;
-                        final startAt = startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
+                        final startAt =
+                        startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
 
                         final scoreJson = g['score'] != null
                             ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
                             : <String, dynamic>{};
 
-                        // Card com press contínuo de 2s
+                        // Card com press contínuo de 2s (apenas se permitido gerir)
                         return GestureDetector(
-                          onTapDown: (_) => _startHold(() => _openScoreboardsMenu(gameId)),
+                          onTapDown: (_) {
+                            if (widget.caps.canCreateEntities) {
+                              _startHold(() => _openScoreboardsMenu(gameId));
+                            } else {
+                              // feedback opcional no modo consulta
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Modo consulta: não é possível gerir scoreboards.'),
+                                ),
+                              );
+                            }
+                          },
                           onTapUp: (_) => _cancelHold(),
                           onTapCancel: _cancelHold,
-                          onPanStart: (_) => _cancelHold(), // cancela se o utilizador começar a arrastar/scroll
+                          onPanStart: (_) => _cancelHold(),
                           onTap: () {
                             // toque normal: abre detalhe
                             Navigator.push(
@@ -634,6 +670,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                   format: format,
                                   initialScore: scoreJson,
                                   startAt: startAt,
+                                  caps: widget.caps, // ← passa o caps correto
                                 ),
                               ),
                             );
@@ -644,17 +681,27 @@ class _EventGamesPageState extends State<EventGamesPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('$p1 / $p2', maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  Text('$p1 / $p2',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: Theme.of(context).textTheme.titleMedium),
-                                  Text('$p3 / $p4', maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  Text('$p3 / $p4',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: Theme.of(context).textTheme.titleMedium),
                                   const SizedBox(height: 8),
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 6,
                                     children: [
-                                      Chip(avatar: const Icon(Icons.place, size: 18), label: Text(court)),
-                                      Chip(avatar: const Icon(Icons.rule, size: 18), label: Text(_formatLabel(format))),
+                                      Chip(
+                                          avatar:
+                                          const Icon(Icons.place, size: 18),
+                                          label: Text(court)),
+                                      Chip(
+                                          avatar:
+                                          const Icon(Icons.rule, size: 18),
+                                          label: Text(_formatLabel(format))),
                                     ],
                                   ),
                                   const SizedBox(height: 8),
@@ -665,11 +712,16 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                           'Score: ${_scoreSummary(scoreJson, format)}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context).textTheme.bodyLarge,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge,
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                      Icon(Icons.more_horiz, color: Theme.of(context).colorScheme.outline),
+                                      Icon(Icons.more_horiz,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .outline),
                                     ],
                                   ),
                                 ],
@@ -685,18 +737,20 @@ class _EventGamesPageState extends State<EventGamesPage> {
             ),
           ),
 
-          // FAB pinned above the footer – always visible
-          Positioned(
-            right: 16,
-            bottom: 16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
-            child: FloatingActionButton.extended(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              onPressed: _openCreateGameSheet,
-              icon: const Icon(Icons.add),
-              label: const Text('Novo jogo'),
+          // FAB – só mostra se pode criar jogos
+          if (widget.caps.canCreateEntities)
+            Positioned(
+              right: 16,
+              bottom:
+              16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
+              child: FloatingActionButton.extended(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                onPressed: _openCreateGameSheet,
+                icon: const Icon(Icons.add),
+                label: const Text('Novo jogo'),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -710,7 +764,12 @@ class _Board {
   final String label;
   final String layout;
   final int maxPositions;
-  _Board({required this.id, required this.label, required this.layout, required this.maxPositions});
+  _Board({
+    required this.id,
+    required this.label,
+    required this.layout,
+    required this.maxPositions,
+  });
 }
 
 class _Membership {
@@ -718,19 +777,26 @@ class _Membership {
   final String boardId;
   final String boardTitle;
   final int position;
-  _Membership({required this.selectionId, required this.boardId, required this.boardTitle, required this.position});
+  _Membership({
+    required this.selectionId,
+    required this.boardId,
+    required this.boardTitle,
+    required this.position,
+  });
 }
 
 class _ScoreboardMembershipData {
   final List<_Board> boards;
   final List<_Membership> memberships;
-  _ScoreboardMembershipData({required this.boards, required this.memberships});
+  _ScoreboardMembershipData({
+    required this.boards,
+    required this.memberships,
+  });
 }
 
 Future<_ScoreboardMembershipData> _loadMembershipAndBoards(String gameId) async {
   final supabase = Supabase.instance.client;
 
-  // memberships deste jogo
   final selRows = await supabase
       .from('scoreboard_selections')
       .select('id, scoreboard_id, position')
@@ -738,7 +804,6 @@ Future<_ScoreboardMembershipData> _loadMembershipAndBoards(String gameId) async 
 
   final selections = List<Map<String, dynamic>>.from(selRows);
 
-  // boards
   final boardsRows = await supabase
       .from('scoreboards')
       .select('id, key, title, layout, positions')
@@ -749,7 +814,7 @@ Future<_ScoreboardMembershipData> _loadMembershipAndBoards(String gameId) async 
 
   final boardsModels = boards.map<_Board>((b) {
     final title = (b['title'] as String?)?.trim();
-    final key   = (b['key'] as String?)?.trim();
+    final key = (b['key'] as String?)?.trim();
     final label = (title?.isNotEmpty == true ? title! : key ?? 'Sem título');
     final layout = (b['layout'] as String?) ?? 'auto';
     final maxPos = _maxPositionsFromMap(b);
@@ -759,7 +824,7 @@ Future<_ScoreboardMembershipData> _loadMembershipAndBoards(String gameId) async 
   final membershipsModels = selections.map<_Membership>((s) {
     final b = boardsById[s['scoreboard_id'] as String];
     final title = (b?['title'] as String?)?.trim();
-    final key   = (b?['key'] as String?)?.trim();
+    final key = (b?['key'] as String?)?.trim();
     final label = (title?.isNotEmpty == true ? title! : key ?? 'Sem título');
     return _Membership(
       selectionId: s['id'] as int,
@@ -799,17 +864,20 @@ int _maxPositionsFromMap(Map b) {
 
   final layout = (b['layout'] as String?)?.toLowerCase() ?? 'auto';
   switch (layout) {
-    case '1x1': return 1;
-    case '1x2': return 2;
-    case '1x3': return 3;
-    case '1x4': return 4;
-    case '2x2': return 4;
-    default:    return 4;
+    case '1x1':
+      return 1;
+    case '1x2':
+      return 2;
+    case '1x3':
+      return 3;
+    case '1x4':
+      return 4;
+    case '2x2':
+      return 4;
+    default:
+      return 4;
   }
 }
-
-
-
 
 Future<int> _maxPositionsForBoard(String boardId) async {
   final supabase = Supabase.instance.client;
@@ -832,13 +900,14 @@ Future<void> _assignGameToBoard(String boardId, int position, String gameId) asy
       .eq('position', position);
 
   // 2) Cria ou move este jogo para a posição (override efetivo)
-  await supabase
-      .from('scoreboard_selections')
-      .upsert({
-    'scoreboard_id': boardId,
-    'game_id': gameId,
-    'position': position,
-  }, onConflict: 'scoreboard_id,game_id');
+  await supabase.from('scoreboard_selections').upsert(
+    {
+      'scoreboard_id': boardId,
+      'game_id': gameId,
+      'position': position,
+    },
+    onConflict: 'scoreboard_id,game_id',
+  );
 }
 
 Future<DateTime?> _pickDateTime(BuildContext context, DateTime? initial) async {
@@ -859,10 +928,7 @@ Future<DateTime?> _pickDateTime(BuildContext context, DateTime? initial) async {
   );
   if (time == null) return null;
 
-  return DateTime(
-    date.year, date.month, date.day,
-    time.hour, time.minute,
-  );
+  return DateTime(date.year, date.month, date.day, time.hour, time.minute);
 }
 
 String _two(int n) => n.toString().padLeft(2, '0');
@@ -872,8 +938,3 @@ String _fmtDateTimeShort(DateTime dtLocal) {
   // dd/MM/yyyy HH:mm
   return '${_two(d.day)}/${_two(d.month)}/${d.year} ${_two(d.hour)}:${_two(d.minute)}';
 }
-
-
-
-
-

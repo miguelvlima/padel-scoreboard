@@ -1,21 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'events/events_page.dart';
+import 'app_mode.dart';
+import 'app_capabilities.dart';
 import 'theme/app_theme.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await Supabase.initialize(
-    url: 'https://fdyqkgprxtileyhctkgn.supabase.co', // substitui
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkeXFrZ3ByeHRpbGV5aGN0a2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU0MzQzODMsImV4cCI6MjA3MTAxMDM4M30.PvHpyPt7Ksjpgj0xfVIK1D6PwGlmVDGbKWO4aB0mEpk',        // substitui
-  );
-
-  runApp(const MyApp());
-}
-
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final AppMode mode;
+  final AppCapabilities caps;
+  const MyApp({super.key, required this.mode, required this.caps});
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +16,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
-      home: const EventsPage(),
+      home: EventsPage(caps: caps),
 
     );
   }

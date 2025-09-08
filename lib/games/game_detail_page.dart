@@ -10,6 +10,8 @@ import 'logic/match_state.dart';
 import 'logic/score_manager/score_manager.dart';
 import 'logic/format_rules.dart';
 
+import '../app_capabilities.dart';
+
 class GameDetailPage extends StatefulWidget {
   final String gameId;
   final String adminKey;
@@ -20,6 +22,7 @@ class GameDetailPage extends StatefulWidget {
   final String format;
   final Map<String, dynamic>? initialScore;
   final DateTime? startAt;
+  final AppCapabilities caps;
 
   const GameDetailPage({
     super.key,
@@ -30,8 +33,10 @@ class GameDetailPage extends StatefulWidget {
     required this.player3,
     required this.player4,
     required this.format,
+    required this.caps,
     this.initialScore,
     this.startAt,
+
   });
 
   @override
