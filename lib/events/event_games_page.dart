@@ -32,7 +32,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
   @override
   void initState() {
     super.initState();
-    _fetchCourtsForList(); // fire-and-forget; UI does not wait for this
+    _fetchCourtsForList(); // fire-and-forget; UI não espera
   }
 
   @override
@@ -52,7 +52,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
         };
       });
     } catch (_) {
-      // ignore – we’ll just show "—" until courts are available
+      // ignore – mostra "—" até haver courts
     }
   }
 
@@ -75,7 +75,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
     }
   }
 
-  // ------- creation sheet -------
+  // ------- criação de jogo (sheet) -------
   Future<void> _openCreateGameSheet() async {
     // proteção: modo consulta não cria jogos
     if (!widget.caps.canCreateEntities) {
@@ -93,9 +93,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
     final p4 = TextEditingController();
     String format = 'best_of_3';
     String? courtId = _courtNameById.keys.isNotEmpty ? _courtNameById.keys.first : null;
-    DateTime? startAt = DateTime.now(); // default: agora (o utilizador pode mudar)
+    DateTime? startAt = DateTime.now(); // default: agora (pode ser alterado)
 
-    // lazy-load courts if empty
+    // lazy-load courts se vazio
     if (_courtNameById.isEmpty) {
       try {
         final rows = await supabase.from('courts').select('id, name').order('name');
@@ -254,6 +254,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
       textInputAction: TextInputAction.next,
     );
   }
+
   // -------------------------------------------
 
   String _scoreSummary(Map<String, dynamic> score, String format) {
@@ -570,11 +571,47 @@ class _EventGamesPageState extends State<EventGamesPage> {
     );
   }
 
+  // ===================== APAGAR JOGO (admin-only) =====================
+
+  Future<bool> _confirmDeleteGame(String teamA, String teamB) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Apagar jogo?'),
+        content: Text('Isto vai apagar o jogo:\n$teamA  vs  $teamB'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Apagar')),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<void> _deleteGame(String gameId) async {
+    try {
+      await supabase.from('games').delete().eq('id', gameId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Jogo apagado.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao apagar: $e')),
+        );
+      }
+    }
+  }
+
+  // ====================================================================
+
   @override
   Widget build(BuildContext context) {
+    final isAdmin = widget.caps.canCreateEntities == true;
+
     return Scaffold(
-      appBar:
-      AppBar(title: Text('Jogos — ${widget.eventName}', maxLines: 2, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(title: Text('Jogos — ${widget.eventName}', maxLines: 2, overflow: TextOverflow.ellipsis)),
       bottomNavigationBar: const AppFooter(),
       body: Stack(
         children: [
@@ -596,8 +633,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child:
-                        Text('Erro a carregar jogos:\n${snapshot.error}', textAlign: TextAlign.center),
+                        child: Text('Erro a carregar jogos:\n${snapshot.error}', textAlign: TextAlign.center),
                       ),
                     );
                   }
@@ -608,11 +644,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
 
                   return RefreshIndicator(
                     onRefresh: () async {
-                      await supabase
-                          .from('games')
-                          .select('id')
-                          .eq('event_id', widget.eventId)
-                          .limit(1);
+                      await supabase.from('games').select('id').eq('event_id', widget.eventId).limit(1);
                     },
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
@@ -630,104 +662,119 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         final courtId = g['court_id']?.toString();
                         final court = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
                         final startAtIso = g['start_at'] as String?;
-                        final startAt =
-                        startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
+                        final startAt = startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
 
                         final scoreJson = g['score'] != null
                             ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
                             : <String, dynamic>{};
 
-                        // Card com press contínuo de 2s (apenas se permitido gerir)
-                        return GestureDetector(
+                        final teamALabel = '$p1 / $p2';
+                        final teamBLabel = '$p3 / $p4';
+
+                        // Conteúdo do cartão com overlay de apagar (X) só para admin
+                        final cardInner = Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(teamALabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium),
+                              Text(teamBLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Chip(avatar: const Icon(Icons.place, size: 18), label: Text(court)),
+                                  Chip(avatar: const Icon(Icons.rule, size: 18), label: Text(_formatLabel(format))),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Score: ${_scoreSummary(scoreJson, format)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.bodyLarge,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.more_horiz, color: Theme.of(context).colorScheme.outline),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+
+                        final stack = Stack(
+                          children: [
+                            // Corpo do cartão (tap navega para detalhe)
+                            InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => GameDetailPage(
+                                      gameId: gameId,
+                                      adminKey: adminKey,
+                                      player1: p1,
+                                      player2: p2,
+                                      player3: p3,
+                                      player4: p4,
+                                      format: format,
+                                      initialScore: scoreJson,
+                                      startAt: startAt,
+                                      caps: widget.caps, // passa caps
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: cardInner,
+                            ),
+
+                          ],
+                        );
+
+                        final tile = GestureDetector(
+                          // Long press “manual”: só se admin (gestão)
                           onTapDown: (_) {
-                            if (widget.caps.canCreateEntities) {
+                            if (isAdmin) {
                               _startHold(() => _openScoreboardsMenu(gameId));
                             } else {
-                              // feedback opcional no modo consulta
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Modo consulta: não é possível gerir scoreboards.'),
-                                ),
+                                const SnackBar(content: Text('Modo consulta: não é possível gerir scoreboards.')),
                               );
                             }
                           },
                           onTapUp: (_) => _cancelHold(),
                           onTapCancel: _cancelHold,
                           onPanStart: (_) => _cancelHold(),
-                          onTap: () {
-                            // toque normal: abre detalhe
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => GameDetailPage(
-                                  gameId: gameId,
-                                  adminKey: adminKey,
-                                  player1: p1,
-                                  player2: p2,
-                                  player3: p3,
-                                  player4: p4,
-                                  format: format,
-                                  initialScore: scoreJson,
-                                  startAt: startAt,
-                                  caps: widget.caps, // ← passa o caps correto
-                                ),
-                              ),
-                            );
-                          },
-                          child: Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('$p1 / $p2',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.titleMedium),
-                                  Text('$p3 / $p4',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.titleMedium),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 6,
-                                    children: [
-                                      Chip(
-                                          avatar:
-                                          const Icon(Icons.place, size: 18),
-                                          label: Text(court)),
-                                      Chip(
-                                          avatar:
-                                          const Icon(Icons.rule, size: 18),
-                                          label: Text(_formatLabel(format))),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'Score: ${_scoreSummary(scoreJson, format)}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyLarge,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Icon(Icons.more_horiz,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .outline),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          child: Card(child: stack),
+                        );
+
+                        if (!isAdmin) return tile;
+
+                        // Admin: permite swipe-to-delete com confirmação
+                        return Dismissible(
+                          key: ValueKey('game-$gameId'),
+                          direction: DismissDirection.endToStart,
+                          confirmDismiss: (_) => _confirmDeleteGame(teamALabel, teamBLabel),
+                          onDismissed: (_) => _deleteGame(gameId),
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            color: Colors.red,
+                            child: const Icon(Icons.delete, color: Colors.white),
                           ),
+                          child: tile,
                         );
                       },
                     ),
@@ -741,8 +788,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
           if (widget.caps.canCreateEntities)
             Positioned(
               right: 16,
-              bottom:
-              16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
+              bottom: 16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
               child: FloatingActionButton.extended(
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black,

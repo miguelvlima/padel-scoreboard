@@ -78,6 +78,41 @@ class _EventsPageState extends State<EventsPage> {
     );
   }
 
+  Future<bool> _confirmDeleteEvent(String name) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Apagar evento?'),
+        content: Text('Isto vai apagar o evento "$name" e todos os jogos associados.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Apagar')),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<void> _deleteEvent(String eventId) async {
+    try {
+      // Apaga primeiro os jogos do evento (FKs de selections caem por cascata)
+      await sb.from('games').delete().eq('event_id', eventId);
+      // Depois o evento
+      await sb.from('events').delete().eq('id', eventId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Evento apagado.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao apagar: $e')),
+        );
+      }
+    }
+  }
+
   Widget _bg({required Widget child}) {
     return Container(
       decoration: const BoxDecoration(
@@ -92,6 +127,8 @@ class _EventsPageState extends State<EventsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = widget.caps.canCreateEntities == true;
+
     return Scaffold(
       appBar: AppBar(title: const Text('EVENTOS')),
       bottomNavigationBar: const AppFooter(),
@@ -132,45 +169,67 @@ class _EventsPageState extends State<EventsPage> {
                       final id = e['id']?.toString() ?? '';
                       final name = e['name']?.toString() ?? '—';
 
-                      return Card(
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => EventGamesPage(
-                                  eventId: id,
-                                  eventName: name,
-                                  caps: widget.caps, // ← usa o caps recebido
+                      final card = Card(
+                        child: Stack(
+                          children: [
+                            InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => EventGamesPage(
+                                      eventId: id,
+                                      eventName: name,
+                                      caps: widget.caps, // ← passa as capabilities
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                      child: Icon(Icons.emoji_events, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context).textTheme.titleMedium,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
+                                  ],
                                 ),
                               ),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                  child: Icon(Icons.emoji_events, color: Theme.of(context).colorScheme.onPrimaryContainer),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    name,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
-                              ],
                             ),
-                          ),
+
+                          ],
                         ),
+                      );
+
+                      if (!isAdmin) return card;
+
+                      // Swipe-to-delete com confirmação
+                      return Dismissible(
+                        key: ValueKey('event-$id'),
+                        direction: DismissDirection.endToStart,
+                        confirmDismiss: (_) => _confirmDeleteEvent(name),
+                        onDismissed: (_) => _deleteEvent(id),
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          color: Colors.red,
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        child: card,
                       );
                     },
                   );
@@ -180,7 +239,7 @@ class _EventsPageState extends State<EventsPage> {
           ),
 
           // FAB: só mostra se o modo permitir criação
-          if (widget.caps.canCreateEntities)
+          if (isAdmin)
             Positioned(
               right: 16,
               bottom: 16 + MediaQuery.of(context).padding.bottom + 44, // 44 = footer height
