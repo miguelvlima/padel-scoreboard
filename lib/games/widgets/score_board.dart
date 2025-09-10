@@ -145,8 +145,8 @@ class _ScoreBoardState extends State<ScoreBoard> {
                         Expanded(
                           child: Text(
                             cutFinal != null
-                                ? 'Esta alteração pode decidir o jogo mais cedo e descartar sets seguintes.'
-                                : 'Esta alteração vai reabrir o set e descartar este e os sets seguintes.',
+                                ? 'Esta alteração vai decidir o jogo mais cedo e pode descartar sets seguintes.'
+                                : 'Esta alteração vai reabrir o set e pode descartar sets seguintes.',
                             style: theme.textTheme.bodySmall,
                           ),
                         ),
@@ -164,8 +164,8 @@ class _ScoreBoardState extends State<ScoreBoard> {
 
                     if (cutFinal2 != null || cutReopen2 != null) {
                       final msg = (cutFinal2 != null)
-                          ? 'Esta alteração vai decidir o jogo mais cedo e remover os sets seguintes. Continuar?'
-                          : 'Esta alteração vai reabrir este set e remover este e os sets seguintes. Continuar?';
+                          ? 'Esta alteração vai decidir o jogo mais cedo e pode descartar sets seguintes. Continuar?'
+                          : 'Esta alteração vai reabrir este set e pode descartar sets seguintes. Continuar?';
 
                       final proceed = await showDialog<bool>(
                         context: ctx,
