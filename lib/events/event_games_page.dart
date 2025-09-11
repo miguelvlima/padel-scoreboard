@@ -75,6 +75,166 @@ class _EventGamesPageState extends State<EventGamesPage> {
     }
   }
 
+  Future<void> _openEditGameSheet(Map<String, dynamic> g) async {
+    if (!widget.caps.canCreateEntities) return; // só admin
+
+    final gameId = g['id']?.toString() ?? '';
+
+    final p1 = TextEditingController(text: (g['player1'] ?? '').toString());
+    final p2 = TextEditingController(text: (g['player2'] ?? '').toString());
+    final p3 = TextEditingController(text: (g['player3'] ?? '').toString());
+    final p4 = TextEditingController(text: (g['player4'] ?? '').toString());
+
+    String format = (g['format'] ?? 'best_of_3').toString();
+
+    // courts
+    if (_courtNameById.isEmpty) {
+      try {
+        final rows = await supabase.from('courts').select('id, name').order('name');
+        final list = List<Map<String, dynamic>>.from(rows);
+        setState(() {
+          _courtNameById = { for (final c in list) (c['id'] as String): (c['name'] as String) };
+        });
+      } catch (_) {}
+    }
+    String? courtId = (g['court_id'] as String?) ?? (_courtNameById.isNotEmpty ? _courtNameById.keys.first : null);
+
+    // data/hora
+    DateTime? startAt;
+    final startAtIso = g['start_at'] as String?;
+    if (startAtIso != null) {
+      startAt = DateTime.tryParse(startAtIso)?.toLocal();
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16, right: 16, top: 16,
+                bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Editar jogo', style: Theme.of(ctx).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    _text(ctx, p1, 'Jogador 1'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p2, 'Jogador 2'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p3, 'Jogador 3'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p4, 'Jogador 4'),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: courtId,
+                      decoration: const InputDecoration(labelText: 'Court'),
+                      items: _courtNameById.entries
+                          .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
+                          .toList(),
+                      onChanged: (v) => setSheet(() => courtId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event),
+                      title: const Text('Data & hora'),
+                      subtitle: Text(startAt != null ? _fmtDateTimeShort(startAt!) : '—'),
+                      trailing: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_calendar),
+                        label: const Text('Escolher'),
+                        onPressed: () async {
+                          final picked = await _pickDateTime(context, startAt);
+                          if (picked != null) setSheet(() => startAt = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: format,
+                      decoration: const InputDecoration(labelText: 'Formato'),
+                      items: const [
+                        DropdownMenuItem(value: 'best_of_3', child: Text('Best of 3')),
+                        DropdownMenuItem(value: 'best_of_3_gp', child: Text('Best of 3 + GP')),
+                        DropdownMenuItem(value: 'super_tiebreak', child: Text('Super Tiebreak')),
+                        DropdownMenuItem(value: 'super_tiebreak_gp', child: Text('Super Tiebreak + GP')),
+                        DropdownMenuItem(value: 'proset', child: Text('Pro Set')),
+                        DropdownMenuItem(value: 'proset_gp', child: Text('Pro Set + GP')),
+                      ],
+                      onChanged: (v) => setSheet(() => format = v ?? 'best_of_3'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                        const Spacer(),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.save),
+                          label: const Text('Guardar alterações'),
+                          onPressed: () async {
+                            final player1 = p1.text.trim();
+                            final player2 = p2.text.trim();
+                            final player3 = p3.text.trim();
+                            final player4 = p4.text.trim();
+
+                            if ([player1, player2, player3, player4].any((e) => e.isEmpty)) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(content: Text('Preenche os 4 jogadores.')),
+                              );
+                              return;
+                            }
+                            if (courtId == null) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(content: Text('Escolhe o court.')),
+                              );
+                              return;
+                            }
+
+                            try {
+                              await supabase.from('games').update({
+                                'player1': player1,
+                                'player2': player2,
+                                'player3': player3,
+                                'player4': player4,
+                                'format': format,
+                                'start_at': startAt?.toUtc().toIso8601String(),
+                                'court_id': courtId,
+                              }).eq('id', gameId);
+
+                              if (mounted) {
+                                Navigator.pop(ctx);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Jogo atualizado.')),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(content: Text('Erro ao atualizar: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
   // ------- criação de jogo (sheet) -------
   Future<void> _openCreateGameSheet() async {
     // proteção: modo consulta não cria jogos
@@ -685,7 +845,6 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         final teamALabel = '$p1 / $p2';
                         final teamBLabel = '$p3 / $p4';
 
-                        // Conteúdo do cartão com overlay de apagar (X) só para admin
                         final cardInner = Padding(
                           padding: const EdgeInsets.all(14),
                           child: Column(
@@ -727,6 +886,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                           ),
                         );
 
+
+
                         final stack = Stack(
                           children: [
                             // Corpo do cartão (tap navega para detalhe)
@@ -754,8 +915,27 @@ class _EventGamesPageState extends State<EventGamesPage> {
                               child: cardInner,
                             ),
 
+                            // 👉 LÁPIS NO TOPO-DIREITO (só admin)
+                            if (isAdmin)
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkResponse(
+                                    radius: 20,
+                                    onTap: () => _openEditGameSheet(g),
+                                    onTapDown: (_) => _cancelHold(), // evita disparar o long-press do cartão
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(6),
+                                      child: Icon(Icons.edit, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         );
+
 
                         final tile = GestureDetector(
                           // Long press “manual”: só se admin (gestão)
