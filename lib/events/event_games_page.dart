@@ -260,9 +260,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
   String _scoreSummary(Map<String, dynamic> score, String format) {
     final isProset = format.startsWith('proset');
     final isSuperFormat = format.startsWith('super_tiebreak');
-    final G = isProset ? 9 : 6;
-    final maxSets = isProset ? 1 : 3;
-    final setsToWin = isProset ? 1 : 2;
+    final G = isProset ? 9 : 6;          // jogos para fechar set normal
+    final maxSets = isProset ? 1 : 3;    // nº máx de “sets” guardados
+    final setsToWin = isProset ? 1 : 2;  // sets para ganhar o jogo
 
     final rawSets = List<Map<String, dynamic>>.from(score['sets'] ?? const []);
     final current = Map<String, dynamic>.from(score['current'] ?? const {});
@@ -273,14 +273,18 @@ class _EventGamesPageState extends State<EventGamesPage> {
       final diff = (t1 - t2).abs();
 
       if (isSuperFormat && index == maxSets - 1 && maxV >= 9) {
+        // Super TB finais são guardados como último "set" (>=10 com diferença ≥2)
         return (maxV >= 10) && (diff >= 2);
       }
-      if (G == 6) {
-        if (maxV == 6 && diff >= 2) return true;
+      if (!isProset) {
+        // BO3 normal: 6+ por dois OU 7–5/7–6
+        if (maxV >= 6 && diff >= 2) return true;
         if (maxV == 7 && (minV == 5 || minV == 6)) return true;
         return false;
       }
-      return (maxV >= G) && (diff >= 2);
+      // Pro Set: 9–8 (TB aos 8–8) OU 9+ por dois
+      if (maxV == 9 && minV == 8) return true;
+      return (maxV >= 9) && (diff >= 2);
     }
 
     final finished = <Map<String, int>>[];
@@ -310,9 +314,18 @@ class _EventGamesPageState extends State<EventGamesPage> {
       final tb1 = (current['tb_team1'] as num?)?.toInt() ?? 0;
       final tb2 = (current['tb_team2'] as num?)?.toInt() ?? 0;
 
-      if (isSuperFormat && w1 == 1 && w2 == 1) {
+      final isProset = format.startsWith('proset');
+      final isSuper  = format.startsWith('super_tiebreak');
+
+      if (isSuper && w1 == 1 && w2 == 1) {
+        // mostra apenas o SUPER TB em curso
         parts.add('STB: $tb1-$tb2');
-      } else if (!isProset && g1 == G && g2 == G) {
+      } else if (isProset && g1 == 8 && g2 == 8) {
+        // proset: mostra 8–8 e o TB atual
+        parts.add('8-8');
+        parts.add('TB: $tb1-$tb2');
+      } else if (!isProset && g1 == 6 && g2 == 6) {
+        parts.add('6-6');
         parts.add('TB: $tb1-$tb2');
       } else {
         parts.add('$g1-$g2');
@@ -323,6 +336,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
 
     return parts.join(' | ');
   }
+
 
   Widget _bg({required Widget child}) {
     return Container(

@@ -23,47 +23,34 @@ bool _smIsSuperTBActive(ScoreManager m) {
 
 /// Validação única para resultados finais de set (bloqueia 7–3, 8–6, …).
 bool _smIsValidFinalSetScore(ScoreManager m, int t1, int t2, int index) {
-  final G = m.state.gamesToWinSet;                 // 6 (sets normais), 9 (proset), etc.
-  final maxSets = m.state.setsToWinMatch * 2 - 1;  // ex.: BO3 => 3
-  final isLastPossible = index == maxSets - 1;
-
-  final diff = (t1 - t2).abs();
+  final G = m.state.gamesToWinSet;
   final maxV = t1 > t2 ? t1 : t2;
   final minV = t1 > t2 ? t2 : t1;
+  final diff = (t1 - t2).abs();
 
-  // --- SUPER TIE-BREAK (apenas no slot final de formatos super) ---
-  if (m.state.superTieBreak && isLastPossible) {
-    // alvo mínimo = 10, por 2.
-    if (maxV < 10) return false;
-    if (maxV == 10) return diff >= 2;          // 10–8, 10–7, ...
-    // Se passou de 10, tem de ser exatamente por 2 (minimalidade)
-    return diff == 2;                           // 11–9, 12–10, ... (12–9 é inválido)
+  // Super TB (último "set" nos formatos super): >=10 por 2
+  if (_smIsSuperTBSlot(m, index)) {
+    return (maxV >= 10) && (diff >= 2);
   }
 
-  // --- SET NORMAL (G == 6) com TB a 6–6 ---
+  // Sets normais (G=6): 6–0..6–4, 7–5, 7–6
   if (G == 6) {
-    // válidos: 6–0..6–4, 7–5, 7–6 (mínimos); tudo o resto inválido (ex.: 8–6, 7–3, 9–7…)
     if (maxV == 6 && diff >= 2) return true;
     if (maxV == 7 && (minV == 5 || minV == 6)) return true;
     return false;
   }
 
-  // --- PROSET / outros formatos “G por 2” (ex.: G = 9) ---
-  // a) Termina exatamente quando alguém atinge G com diferença >= 2
-  if (maxV == G) return diff >= 2;              // 9–0..9–7 (válidos)
-
-  // b) Extensão a partir de G–1–G–1 (ex.: 8–8) → termina na primeira vantagem de 2
-  //    Para garantir minimalidade:
-  //    - tem de vir de pelo menos G–1 do adversário (ex.: >= 8)
-  //    - diferença TEM de ser exatamente 2 (ex.: 10–8, 11–9, 12–10…)
-  if (maxV > G) {
-    if (minV < G - 1) return false;             // 10–7 inválido: teria terminado 9–7
-    return diff == 2;                           // 11–8 inválido (seria 10–8 antes)
+  // Pro Set (G=9) com TB a 8–8: finais válidos 9–8 (via TB) ou 9–0..9–7
+  if (m.state.setsToWinMatch == 1 && G == 9) {
+    if (maxV != 9) return false;
+    if (minV == 8) return true;   // 9–8 pelo TB
+    return diff >= 2;             // 9–0..9–7 por diferença de 2
   }
 
-  // Ainda ninguém chegou a G
-  return false;
+  // Fallback (não usado atualmente)
+  return (maxV >= G) && (diff >= 2);
 }
+
 
 
 int _smWonSetsForTeam(ScoreManager m, int team) {
@@ -80,13 +67,17 @@ int _smWonSetsForTeam(ScoreManager m, int team) {
   return won;
 }
 
-bool _smShouldEnterNormalTB(ScoreManager m, int g1, int g2) {
-  // Em proset (um único set), NUNCA há tie-break normal
-  if (m.state.setsToWinMatch <= 1) return false;
+bool _smIsProsetFormat(ScoreManager m) => m.state.setsToWinMatch == 1;
 
-  // Nos restantes formatos, trigger é o próprio G (ex.: 6–6)
-  final trigger = m.state.gamesToWinSet; // normalmente 6
-  return g1 == trigger && g2 == trigger;
+/// TB normal:
+/// - Sets normais: 6–6
+/// - Proset:       8–8
+bool _smShouldEnterNormalTB(ScoreManager m, int g1, int g2) {
+  if (_smIsProsetFormat(m)) {
+    return g1 == 8 && g2 == 8; // proset: TB a 8–8
+  }
+  final G = m.state.gamesToWinSet; // 6 nos sets normais
+  return g1 == G && g2 == G;       // 6–6
 }
 
 void _smRecomputeMatchOver(ScoreManager m) {

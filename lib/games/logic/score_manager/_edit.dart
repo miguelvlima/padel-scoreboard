@@ -150,8 +150,8 @@ bool _smApplyFinishedSetResult(
     // sets normais com TB a 6–6
     okInProgress = (maxV < 6) || (maxV == 6 && diff < 2); // inclui 6–6
   } else {
-    // ex. proset a 9: em curso <9, ou >=9 sem diferença 2
-    okInProgress = (maxV < G) || (maxV >= G && diff < 2);
+    // Pro Set (G=9): só está "em curso" enquanto maxV < 9
+    okInProgress = (maxV < G);
   }
   if (!okInProgress) return false;
 
