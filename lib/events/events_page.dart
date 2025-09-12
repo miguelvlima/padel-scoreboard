@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'event_games_page.dart';
+import 'event_home_page.dart';
 import '../app_capabilities.dart';
 import '../games/widgets/app_footer.dart';
 
@@ -178,10 +179,16 @@ class _EventsPageState extends State<EventsPage> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => EventGamesPage(
+                                    builder: (_) => isAdmin
+                                        ? EventHomePage(
                                       eventId: id,
                                       eventName: name,
-                                      caps: widget.caps, // ← passa as capabilities
+                                      caps: widget.caps,
+                                    )
+                                        : EventGamesPage(
+                                      eventId: id,
+                                      eventName: name,
+                                      caps: widget.caps,
                                     ),
                                   ),
                                 );
