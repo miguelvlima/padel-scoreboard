@@ -36,13 +36,13 @@ android {
             dimension = "mode"
             applicationId = "com.nps.padel.admin"      // ← ID ÚNICO
             versionNameSuffix = "-admin"
-            resValue("string", "app_name", "ADMIN IIOpenOuriços") // ← nome da app (é usado no Manifest)
+            resValue("string", "app_name", "NP Scoreboard ADMIN") // ← nome da app (é usado no Manifest)
         }
         create("scorer") {
             dimension = "mode"
             applicationId = "com.nps.padel.scorer"     // ← ID ÚNICO
             versionNameSuffix = "-scorer"
-            resValue("string", "app_name", "II Open Ouriços")
+            resValue("string", "app_name", "NP Scoreboard")
         }
     }
 

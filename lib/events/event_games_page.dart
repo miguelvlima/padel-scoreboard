@@ -218,16 +218,214 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                   "tb_team1": 0,
                                   "tb_team2": 0,
                                 },
-                                "sets": [
-                                  {"team1": 0, "team2": 0},
-                                  {"team1": 0, "team2": 0},
-                                  {"team1": 0, "team2": 0},
-                                ]
+                                "sets": [],
                               },
                               'created_at': DateTime.now().toIso8601String(),
                             });
 
                             if (mounted) Navigator.pop(ctx);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ------- edição (com aviso de reset ao mudar formato) -------
+  Future<void> _openEditGameSheet(Map<String, dynamic> g) async {
+    if (!widget.caps.canCreateEntities) return;
+
+    final gameId = (g['id'] as String?) ?? '';
+    final p1 = TextEditingController(text: (g['player1'] as String?) ?? '');
+    final p2 = TextEditingController(text: (g['player2'] as String?) ?? '');
+    final p3 = TextEditingController(text: (g['player3'] as String?) ?? '');
+    final p4 = TextEditingController(text: (g['player4'] as String?) ?? '');
+
+    String originalFormat = (g['format'] as String?) ?? 'best_of_3';
+    String selectedFormat = originalFormat;
+
+    String? courtId = (g['court_id'] as String?) ??
+        (_courtNameById.keys.isNotEmpty ? _courtNameById.keys.first : null);
+
+    DateTime? startAt;
+    final startAtIso = g['start_at'] as String?;
+    if (startAtIso != null) {
+      startAt = DateTime.tryParse(startAtIso)?.toLocal();
+    }
+
+    // caso ainda não tenhamos courts
+    if (_courtNameById.isEmpty) await _fetchCourtsForList();
+
+    bool willResetScore = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            Future<void> _askResetIfChangingFormat(String newFmt) async {
+              if (newFmt == selectedFormat) return;
+              final confirm = await showDialog<bool>(
+                context: ctx,
+                builder: (_) => AlertDialog(
+                  title: const Text('Mudar formato'),
+                  content: const Text(
+                      'Mudar o formato vai fazer reset à pontuação atual.\nQueres continuar?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Confirmar'),
+                    ),
+                  ],
+                ),
+              ) ??
+                  false;
+              if (!confirm) return; // mantém o formato anterior
+
+              setSheet(() {
+                selectedFormat = newFmt;
+                willResetScore = true;
+              });
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Editar jogo', style: Theme.of(ctx).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    _text(ctx, p1, 'Jogador 1'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p2, 'Jogador 2'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p3, 'Jogador 3'),
+                    const SizedBox(height: 8),
+                    _text(ctx, p4, 'Jogador 4'),
+                    const SizedBox(height: 12),
+
+                    // Court
+                    DropdownButtonFormField<String>(
+                      value: courtId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Court'),
+                      items: _courtNameById.entries
+                          .map((e) => DropdownMenuItem<String>(
+                        value: e.key,
+                        child: Text(e.value, overflow: TextOverflow.ellipsis),
+                      ))
+                          .toList(),
+                      onChanged: (v) => setSheet(() => courtId = v),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Data & Hora
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event),
+                      title: const Text('Data & hora'),
+                      subtitle: Text(startAt != null ? _fmtDateTimeShort(startAt!) : '—'),
+                      trailing: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_calendar),
+                        label: const Text('Escolher'),
+                        onPressed: () async {
+                          final picked = await _pickDateTime(context, startAt);
+                          if (picked != null) setSheet(() => startAt = picked);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Formato (com confirmação de reset)
+                    DropdownButtonFormField<String>(
+                      value: selectedFormat,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Formato'),
+                      items: const [
+                        DropdownMenuItem(value: 'best_of_3', child: Text('Best of 3')),
+                        DropdownMenuItem(value: 'best_of_3_gp', child: Text('Best of 3 + GP')),
+                        DropdownMenuItem(value: 'super_tiebreak', child: Text('Super Tiebreak')),
+                        DropdownMenuItem(value: 'super_tiebreak_gp', child: Text('Super Tiebreak + GP')),
+                        DropdownMenuItem(value: 'proset', child: Text('Pro Set')),
+                        DropdownMenuItem(value: 'proset_gp', child: Text('Pro Set + GP')),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        _askResetIfChangingFormat(v);
+                      },
+                    ),
+
+                    if (willResetScore) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.warning_amber, size: 18, color: Colors.orange),
+                          const SizedBox(width: 6),
+                          Text('O score será reposto ao gravar.',
+                              style: Theme.of(ctx).textTheme.bodySmall),
+                        ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                        const Spacer(),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.save),
+                          label: const Text('Gravar'),
+                          onPressed: () async {
+                            final update = <String, dynamic>{
+                              'player1': p1.text.trim(),
+                              'player2': p2.text.trim(),
+                              'player3': p3.text.trim(),
+                              'player4': p4.text.trim(),
+                              'court_id': courtId,
+                              'start_at': startAt?.toUtc().toIso8601String(),
+                              'format': selectedFormat,
+                            };
+
+                            if (willResetScore) {
+                              update['score'] = {
+                                'current': {
+                                  'points_team1': 0,
+                                  'points_team2': 0,
+                                  'games_team1': 0,
+                                  'games_team2': 0,
+                                  'tb_team1': 0,
+                                  'tb_team2': 0,
+                                },
+                                'sets': [],
+                              };
+                            }
+
+                            await supabase.from('games').update(update).eq('id', gameId);
+
+                            if (!mounted) return;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Jogo atualizado.')),
+                            );
                           },
                         ),
                       ],
@@ -683,14 +881,14 @@ class _EventGamesPageState extends State<EventGamesPage> {
                           );
                         }
 
-                        // ---- filtro por court no cliente (sem usar .eq no stream depois do execute) ----
+                        // ---- filtro por court no cliente ----
                         List<Map<String, dynamic>> games = List<Map<String, dynamic>>.from(snapshot.data ?? const []);
                         final selCourt = _selectedCourtId;
                         if (selCourt != null && selCourt.isNotEmpty) {
                           games = games.where((g) => (g['court_id']?.toString() ?? '') == selCourt).toList();
                         }
 
-                        // reforça ordenação após filtrar (start_at, depois created_at)
+                        // ordena (start_at, depois created_at)
                         int _cmp(a, b) {
                           final sa = a['start_at'] as String?;
                           final sb = b['start_at'] as String?;
@@ -782,6 +980,8 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                 ),
                               );
 
+                              final isAdminLocal = widget.caps.canCreateEntities == true;
+
                               final stack = Stack(
                                 children: [
                                   InkWell(
@@ -807,12 +1007,31 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                     },
                                     child: cardInner,
                                   ),
+
+                                  // LÁPIS (apenas admin)
+                                  if (isAdminLocal)
+                                    Positioned(
+                                      top: 6,
+                                      right: 6,
+                                      child: Material(
+                                        color: Colors.black.withOpacity(0.06),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(12),
+                                          onTap: () => _openEditGameSheet(g),
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(6),
+                                            child: Icon(Icons.edit, size: 18),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               );
 
                               final tile = GestureDetector(
                                 onTapDown: (_) {
-                                  if (isAdmin) {
+                                  if (isAdminLocal) {
                                     _startHold(() => _openScoreboardsMenu(gameId));
                                   } else {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -826,7 +1045,7 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                 child: Card(child: stack),
                               );
 
-                              if (!isAdmin) return tile;
+                              if (!isAdminLocal) return tile;
 
                               // Admin: permite swipe-to-delete com confirmação
                               return Dismissible(
