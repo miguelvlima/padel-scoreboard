@@ -28,6 +28,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
   Map<String, String> _courtNameById = {};
   String? _selectedCourtId;
 
+  // --- NOVO: filtro por dia (YYYY-MM-DD local) ---
+  String? _selectedDayKey;
+
   // timer para press contínuo (2 segundos)
   Timer? _holdTimer;
 
@@ -135,9 +138,9 @@ class _EventGamesPageState extends State<EventGamesPage> {
                       decoration: const InputDecoration(labelText: 'Court'),
                       items: _courtNameById.entries
                           .map((e) => DropdownMenuItem<String>(
-                        value: e.key,
-                        child: Text(e.value, overflow: TextOverflow.ellipsis),
-                      ))
+                                value: e.key,
+                                child: Text(e.value, overflow: TextOverflow.ellipsis),
+                              ))
                           .toList(),
                       onChanged: (v) => setSheet(() => courtId = v),
                     ),
@@ -218,214 +221,16 @@ class _EventGamesPageState extends State<EventGamesPage> {
                                   "tb_team1": 0,
                                   "tb_team2": 0,
                                 },
-                                "sets": [],
+                                "sets": [
+                                  {"team1": 0, "team2": 0},
+                                  {"team1": 0, "team2": 0},
+                                  {"team1": 0, "team2": 0},
+                                ]
                               },
                               'created_at': DateTime.now().toIso8601String(),
                             });
 
                             if (mounted) Navigator.pop(ctx);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ------- edição (com aviso de reset ao mudar formato) -------
-  Future<void> _openEditGameSheet(Map<String, dynamic> g) async {
-    if (!widget.caps.canCreateEntities) return;
-
-    final gameId = (g['id'] as String?) ?? '';
-    final p1 = TextEditingController(text: (g['player1'] as String?) ?? '');
-    final p2 = TextEditingController(text: (g['player2'] as String?) ?? '');
-    final p3 = TextEditingController(text: (g['player3'] as String?) ?? '');
-    final p4 = TextEditingController(text: (g['player4'] as String?) ?? '');
-
-    String originalFormat = (g['format'] as String?) ?? 'best_of_3';
-    String selectedFormat = originalFormat;
-
-    String? courtId = (g['court_id'] as String?) ??
-        (_courtNameById.keys.isNotEmpty ? _courtNameById.keys.first : null);
-
-    DateTime? startAt;
-    final startAtIso = g['start_at'] as String?;
-    if (startAtIso != null) {
-      startAt = DateTime.tryParse(startAtIso)?.toLocal();
-    }
-
-    // caso ainda não tenhamos courts
-    if (_courtNameById.isEmpty) await _fetchCourtsForList();
-
-    bool willResetScore = false;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            Future<void> _askResetIfChangingFormat(String newFmt) async {
-              if (newFmt == selectedFormat) return;
-              final confirm = await showDialog<bool>(
-                context: ctx,
-                builder: (_) => AlertDialog(
-                  title: const Text('Mudar formato'),
-                  content: const Text(
-                      'Mudar o formato vai fazer reset à pontuação atual.\nQueres continuar?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Confirmar'),
-                    ),
-                  ],
-                ),
-              ) ??
-                  false;
-              if (!confirm) return; // mantém o formato anterior
-
-              setSheet(() {
-                selectedFormat = newFmt;
-                willResetScore = true;
-              });
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Editar jogo', style: Theme.of(ctx).textTheme.titleLarge),
-                    const SizedBox(height: 12),
-                    _text(ctx, p1, 'Jogador 1'),
-                    const SizedBox(height: 8),
-                    _text(ctx, p2, 'Jogador 2'),
-                    const SizedBox(height: 8),
-                    _text(ctx, p3, 'Jogador 3'),
-                    const SizedBox(height: 8),
-                    _text(ctx, p4, 'Jogador 4'),
-                    const SizedBox(height: 12),
-
-                    // Court
-                    DropdownButtonFormField<String>(
-                      value: courtId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Court'),
-                      items: _courtNameById.entries
-                          .map((e) => DropdownMenuItem<String>(
-                        value: e.key,
-                        child: Text(e.value, overflow: TextOverflow.ellipsis),
-                      ))
-                          .toList(),
-                      onChanged: (v) => setSheet(() => courtId = v),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Data & Hora
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.event),
-                      title: const Text('Data & hora'),
-                      subtitle: Text(startAt != null ? _fmtDateTimeShort(startAt!) : '—'),
-                      trailing: OutlinedButton.icon(
-                        icon: const Icon(Icons.edit_calendar),
-                        label: const Text('Escolher'),
-                        onPressed: () async {
-                          final picked = await _pickDateTime(context, startAt);
-                          if (picked != null) setSheet(() => startAt = picked);
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Formato (com confirmação de reset)
-                    DropdownButtonFormField<String>(
-                      value: selectedFormat,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Formato'),
-                      items: const [
-                        DropdownMenuItem(value: 'best_of_3', child: Text('Best of 3')),
-                        DropdownMenuItem(value: 'best_of_3_gp', child: Text('Best of 3 + GP')),
-                        DropdownMenuItem(value: 'super_tiebreak', child: Text('Super Tiebreak')),
-                        DropdownMenuItem(value: 'super_tiebreak_gp', child: Text('Super Tiebreak + GP')),
-                        DropdownMenuItem(value: 'proset', child: Text('Pro Set')),
-                        DropdownMenuItem(value: 'proset_gp', child: Text('Pro Set + GP')),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        _askResetIfChangingFormat(v);
-                      },
-                    ),
-
-                    if (willResetScore) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.warning_amber, size: 18, color: Colors.orange),
-                          const SizedBox(width: 6),
-                          Text('O score será reposto ao gravar.',
-                              style: Theme.of(ctx).textTheme.bodySmall),
-                        ],
-                      ),
-                    ],
-
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                        const Spacer(),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.save),
-                          label: const Text('Gravar'),
-                          onPressed: () async {
-                            final update = <String, dynamic>{
-                              'player1': p1.text.trim(),
-                              'player2': p2.text.trim(),
-                              'player3': p3.text.trim(),
-                              'player4': p4.text.trim(),
-                              'court_id': courtId,
-                              'start_at': startAt?.toUtc().toIso8601String(),
-                              'format': selectedFormat,
-                            };
-
-                            if (willResetScore) {
-                              update['score'] = {
-                                'current': {
-                                  'points_team1': 0,
-                                  'points_team2': 0,
-                                  'games_team1': 0,
-                                  'games_team2': 0,
-                                  'tb_team1': 0,
-                                  'tb_team2': 0,
-                                },
-                                'sets': [],
-                              };
-                            }
-
-                            await supabase.from('games').update(update).eq('id', gameId);
-
-                            if (!mounted) return;
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Jogo atualizado.')),
-                            );
                           },
                         ),
                       ],
@@ -453,6 +258,15 @@ class _EventGamesPageState extends State<EventGamesPage> {
     final d = dtLocal;
     return '${_two(d.day)}/${_two(d.month)}/${d.year} ${_two(d.hour)}:${_two(d.minute)}';
   }
+
+  // --- NOVO: helpers de datas ---
+  String? _dayKeyFromStartAt(String? iso) {
+    if (iso == null) return null;
+    final dt = DateTime.parse(iso).toLocal();
+    return '${dt.year}-${_two(dt.month)}-${_two(dt.day)}';
+  }
+
+  String _fmtDate(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
 
   // -------- score resumo (com ProSet + TB) --------
   String _scoreSummary(Map<String, dynamic> score, String format) {
@@ -596,43 +410,43 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         )
                       else
                         ...data.memberships.map(
-                              (m) => ListTile(
+                          (m) => ListTile(
                             leading: const Icon(Icons.tv),
                             title: Text(m.boardTitle),
                             subtitle: Text('Posição ${m.position}'),
                             trailing: widget.caps.canCreateEntities
                                 ? IconButton(
-                              tooltip: 'Remover deste scoreboard',
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: () async {
-                                try {
-                                  await supabase
-                                      .from('scoreboard_selections')
-                                      .delete()
-                                      .eq('id', m.selectionId);
-                                  final refreshed = await _loadMembershipAndBoards(gameId);
-                                  setSheet(() {
-                                    data.memberships
-                                      ..clear()
-                                      ..addAll(refreshed.memberships);
-                                    data.boards
-                                      ..clear()
-                                      ..addAll(refreshed.boards);
-                                  });
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Removido de "${m.boardTitle}".')),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Erro ao remover: $e')),
-                                    );
-                                  }
-                                }
-                              },
-                            )
+                                    tooltip: 'Remover deste scoreboard',
+                                    icon: const Icon(Icons.remove_circle_outline),
+                                    onPressed: () async {
+                                      try {
+                                        await supabase
+                                            .from('scoreboard_selections')
+                                            .delete()
+                                            .eq('id', m.selectionId);
+                                        final refreshed = await _loadMembershipAndBoards(gameId);
+                                        setSheet(() {
+                                          data.memberships
+                                            ..clear()
+                                            ..addAll(refreshed.memberships);
+                                          data.boards
+                                            ..clear()
+                                            ..addAll(refreshed.boards);
+                                        });
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Removido de "${m.boardTitle}".')),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Erro ao remover: $e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  )
                                 : null,
                           ),
                         ),
@@ -645,19 +459,19 @@ class _EventGamesPageState extends State<EventGamesPage> {
                           label: const Text('Adicionar a scoreboard'),
                           onPressed: widget.caps.canCreateEntities
                               ? () async {
-                            final added = await _showAddToScoreboardSheet(gameId);
-                            if (added == true) {
-                              final refreshed = await _loadMembershipAndBoards(gameId);
-                              setSheet(() {
-                                data.memberships
-                                  ..clear()
-                                  ..addAll(refreshed.memberships);
-                                data.boards
-                                  ..clear()
-                                  ..addAll(refreshed.boards);
-                              });
-                            }
-                          }
+                                  final added = await _showAddToScoreboardSheet(gameId);
+                                  if (added == true) {
+                                    final refreshed = await _loadMembershipAndBoards(gameId);
+                                    setSheet(() {
+                                      data.memberships
+                                        ..clear()
+                                        ..addAll(refreshed.memberships);
+                                      data.boards
+                                        ..clear()
+                                        ..addAll(refreshed.boards);
+                                    });
+                                  }
+                                }
                               : null,
                         ),
                       ),
@@ -749,20 +563,20 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         onPressed: selectedPos == null
                             ? null
                             : () async {
-                          try {
-                            await _assignGameToBoard(selectedBoardId, selectedPos!, gameId);
-                            if (context.mounted) {
-                              Navigator.pop(ctx, true);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Atribuído à posição $selectedPos.')),
-                              );
-                            }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Erro: $e')),
-                            );
-                          }
-                        },
+                                try {
+                                  await _assignGameToBoard(selectedBoardId, selectedPos!, gameId);
+                                  if (context.mounted) {
+                                    Navigator.pop(ctx, true);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Atribuído à posição $selectedPos.')),
+                                    );
+                                  }
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Erro: $e')),
+                                  );
+                                }
+                              },
                       ),
                     ],
                   ),
@@ -778,16 +592,16 @@ class _EventGamesPageState extends State<EventGamesPage> {
   // ======= DELETE helpers (admin) =======
   Future<bool> _confirmDeleteGame(String a, String b) async {
     final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Apagar jogo?'),
-        content: Text('Queres apagar:\n$a\nvs\n$b ?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Apagar')),
-        ],
-      ),
-    ) ??
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Apagar jogo?'),
+            content: Text('Queres apagar:\n$a\nvs\n$b ?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Apagar')),
+            ],
+          ),
+        ) ??
         false;
     return ok;
   }
@@ -849,16 +663,16 @@ class _EventGamesPageState extends State<EventGamesPage> {
                       items: _courtNameById.entries
                           .map(
                             (e) => DropdownMenuItem<String>(
-                          value: e.key,
-                          child: Text(e.value, overflow: TextOverflow.ellipsis, maxLines: 1),
-                        ),
-                      )
+                              value: e.key,
+                              child: Text(e.value, overflow: TextOverflow.ellipsis, maxLines: 1),
+                            ),
+                          )
                           .toList(),
                       onChanged: (v) => setState(() => _selectedCourtId = v),
                     ),
                   ),
 
-                  // ---------- LISTA ----------
+                  // ---------- LISTA + FILTRO POR DIA (dentro do stream) ----------
                   Expanded(
                     child: StreamBuilder<List<Map<String, dynamic>>>(
                       stream: supabase
@@ -881,14 +695,46 @@ class _EventGamesPageState extends State<EventGamesPage> {
                           );
                         }
 
-                        // ---- filtro por court no cliente ----
+                        // ---- filtro por court no cliente (sem usar .eq no stream depois do execute) ----
                         List<Map<String, dynamic>> games = List<Map<String, dynamic>>.from(snapshot.data ?? const []);
                         final selCourt = _selectedCourtId;
                         if (selCourt != null && selCourt.isNotEmpty) {
                           games = games.where((g) => (g['court_id']?.toString() ?? '') == selCourt).toList();
                         }
 
-                        // ordena (start_at, depois created_at)
+                        // ---- construir opções de dias (com base nos jogos já filtrados por court) ----
+                        final Map<String, DateTime> dayKeyToDate = {};
+                        for (final g in games) {
+                          final key = _dayKeyFromStartAt(g['start_at'] as String?);
+                          if (key != null) {
+                            final dt = DateTime.parse(g['start_at'] as String).toLocal();
+                            final dateOnly = DateTime(dt.year, dt.month, dt.day);
+                            dayKeyToDate[key] = dateOnly; // última vence, não interessa
+                          }
+                        }
+                        final dayEntries = dayKeyToDate.entries.toList()
+                          ..sort((a, b) => a.value.compareTo(b.value));
+                        final List<DropdownMenuItem<String>> dayItems = dayEntries
+                            .map((e) => DropdownMenuItem<String>(
+                                  value: e.key,
+                                  child: Text(_fmtDate(e.value)),
+                                ))
+                            .toList();
+
+                        // se seleção atual já não existe, limpa
+                        if (_selectedDayKey != null && !dayKeyToDate.containsKey(_selectedDayKey)) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _selectedDayKey = null);
+                          });
+                        }
+
+                        // ---- aplicar filtro por dia (se houver) ----
+                        final selDay = _selectedDayKey;
+                        if (selDay != null && selDay.isNotEmpty) {
+                          games = games.where((g) => _dayKeyFromStartAt(g['start_at'] as String?) == selDay).toList();
+                        }
+
+                        // reforça ordenação após filtrar (start_at, depois created_at)
                         int _cmp(a, b) {
                           final sa = a['start_at'] as String?;
                           final sb = b['start_at'] as String?;
@@ -906,163 +752,170 @@ class _EventGamesPageState extends State<EventGamesPage> {
                         }
                         games.sort(_cmp);
 
+                        // Conteúdo principal (lista ou vazio)
+                        Widget listContent;
                         if (games.isEmpty) {
-                          return const Center(child: Text('Nenhum jogo para este court.'));
-                        }
+                          listContent = const Center(child: Text('Nenhum jogo para este court/dia.'));
+                        } else {
+                          listContent = RefreshIndicator(
+                            onRefresh: () async {
+                              await supabase.from('games').select('id').eq('event_id', widget.eventId).limit(1);
+                            },
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
+                              itemCount: games.length,
+                              itemBuilder: (context, index) {
+                                final g = games[index];
 
-                        return RefreshIndicator(
-                          onRefresh: () async {
-                            await supabase.from('games').select('id').eq('event_id', widget.eventId).limit(1);
-                          },
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
-                            itemCount: games.length,
-                            itemBuilder: (context, index) {
-                              final g = games[index];
+                                final p1 = g['player1'] ?? '';
+                                final p2 = g['player2'] ?? '';
+                                final p3 = g['player3'] ?? '';
+                                final p4 = g['player4'] ?? '';
+                                final format = g['format'] ?? 'best_of_3';
+                                final adminKey = g['admin_key'] ?? '';
+                                final gameId = g['id']?.toString() ?? '';
+                                final courtId = g['court_id']?.toString();
+                                final court = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
+                                final startAtIso = g['start_at'] as String?;
+                                final startAt = startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
 
-                              final p1 = g['player1'] ?? '';
-                              final p2 = g['player2'] ?? '';
-                              final p3 = g['player3'] ?? '';
-                              final p4 = g['player4'] ?? '';
-                              final format = g['format'] ?? 'best_of_3';
-                              final adminKey = g['admin_key'] ?? '';
-                              final gameId = g['id']?.toString() ?? '';
-                              final courtId = g['court_id']?.toString();
-                              final court = courtId != null ? (_courtNameById[courtId] ?? '—') : '—';
-                              final startAtIso = g['start_at'] as String?;
-                              final startAt = startAtIso != null ? DateTime.parse(startAtIso).toLocal() : null;
+                                final scoreJson = g['score'] != null
+                                    ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
+                                    : <String, dynamic>{};
 
-                              final scoreJson = g['score'] != null
-                                  ? Map<String, dynamic>.from(g['score'] as Map<String, dynamic>)
-                                  : <String, dynamic>{};
+                                final teamALabel = '$p1 / $p2';
+                                final teamBLabel = '$p3 / $p4';
 
-                              final teamALabel = '$p1 / $p2';
-                              final teamBLabel = '$p3 / $p4';
-
-                              final cardInner = Padding(
-                                padding: const EdgeInsets.all(14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(teamALabel,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context).textTheme.titleMedium),
-                                    Text(teamBLabel,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context).textTheme.titleMedium),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 6,
-                                      children: [
-                                        Chip(avatar: const Icon(Icons.place, size: 18), label: Text(court)),
-                                        Chip(avatar: const Icon(Icons.rule, size: 18), label: Text(_formatLabel(format))),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            'Score: ${_scoreSummary(scoreJson, format)}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.bodyLarge,
+                                final cardInner = Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(teamALabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context).textTheme.titleMedium),
+                                      Text(teamBLabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context).textTheme.titleMedium),
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        children: [
+                                          Chip(avatar: const Icon(Icons.place, size: 18), label: Text(court)),
+                                          Chip(avatar: const Icon(Icons.rule, size: 18), label: Text(_formatLabel(format))),
+                                          if (startAt != null)
+                                            Chip(avatar: const Icon(Icons.event, size: 18), label: Text(_fmtDateTimeShort(startAt))),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Score: ${_scoreSummary(scoreJson, format)}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context).textTheme.bodyLarge,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Icon(Icons.more_horiz, color: Theme.of(context).colorScheme.outline),
-                                      ],
+                                          const SizedBox(width: 8),
+                                          Icon(Icons.more_horiz, color: Theme.of(context).colorScheme.outline),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                final stack = Stack(
+                                  children: [
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => GameDetailPage(
+                                              gameId: gameId,
+                                              adminKey: adminKey,
+                                              player1: p1,
+                                              player2: p2,
+                                              player3: p3,
+                                              player4: p4,
+                                              format: format,
+                                              initialScore: scoreJson,
+                                              startAt: startAt,
+                                              caps: widget.caps,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: cardInner,
                                     ),
                                   ],
-                                ),
-                              );
+                                );
 
-                              final isAdminLocal = widget.caps.canCreateEntities == true;
-
-                              final stack = Stack(
-                                children: [
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(16),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => GameDetailPage(
-                                            gameId: gameId,
-                                            adminKey: adminKey,
-                                            player1: p1,
-                                            player2: p2,
-                                            player3: p3,
-                                            player4: p4,
-                                            format: format,
-                                            initialScore: scoreJson,
-                                            startAt: startAt,
-                                            caps: widget.caps,
-                                          ),
-                                        ),
+                                final tile = GestureDetector(
+                                  onTapDown: (_) {
+                                    if (isAdmin) {
+                                      _startHold(() => _openScoreboardsMenu(gameId));
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Modo consulta: não é possível gerir scoreboards.')),
                                       );
-                                    },
-                                    child: cardInner,
+                                    }
+                                  },
+                                  onTapUp: (_) => _cancelHold(),
+                                  onTapCancel: _cancelHold,
+                                  onPanStart: (_) => _cancelHold(),
+                                  child: Card(child: stack),
+                                );
+
+                                if (!isAdmin) return tile;
+
+                                // Admin: permite swipe-to-delete com confirmação
+                                return Dismissible(
+                                  key: ValueKey('game-$gameId'),
+                                  direction: DismissDirection.endToStart,
+                                  confirmDismiss: (_) => _confirmDeleteGame(teamALabel, teamBLabel),
+                                  onDismissed: (_) => _deleteGame(gameId),
+                                  background: Container(
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    color: Colors.red,
+                                    child: const Icon(Icons.delete, color: Colors.white),
                                   ),
+                                  child: tile,
+                                );
+                              },
+                            ),
+                          );
+                        }
 
-                                  // LÁPIS (apenas admin)
-                                  if (isAdminLocal)
-                                    Positioned(
-                                      top: 6,
-                                      right: 6,
-                                      child: Material(
-                                        color: Colors.black.withOpacity(0.06),
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(12),
-                                          onTap: () => _openEditGameSheet(g),
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(6),
-                                            child: Icon(Icons.edit, size: 18),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              );
-
-                              final tile = GestureDetector(
-                                onTapDown: (_) {
-                                  if (isAdminLocal) {
-                                    _startHold(() => _openScoreboardsMenu(gameId));
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Modo consulta: não é possível gerir scoreboards.')),
-                                    );
-                                  }
-                                },
-                                onTapUp: (_) => _cancelHold(),
-                                onTapCancel: _cancelHold,
-                                onPanStart: (_) => _cancelHold(),
-                                child: Card(child: stack),
-                              );
-
-                              if (!isAdminLocal) return tile;
-
-                              // Admin: permite swipe-to-delete com confirmação
-                              return Dismissible(
-                                key: ValueKey('game-$gameId'),
-                                direction: DismissDirection.endToStart,
-                                confirmDismiss: (_) => _confirmDeleteGame(teamALabel, teamBLabel),
-                                onDismissed: (_) => _deleteGame(gameId),
-                                background: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                                  color: Colors.red,
-                                  child: const Icon(Icons.delete, color: Colors.white),
+                        // Devolve dropdown de dia + lista
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                              child: DropdownButtonFormField<String?>(
+                                value: dayItems.any((i) => i.value == _selectedDayKey) ? _selectedDayKey : null,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Filtrar por dia',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 ),
-                                child: tile,
-                              );
-                            },
-                          ),
+                                items: [
+                                  const DropdownMenuItem<String?>(value: null, child: Text('Todos os dias')),
+                                  ...dayItems.map((e) => DropdownMenuItem<String?>(value: e.value, child: e.child)),
+                                ],
+                                onChanged: (v) => setState(() => _selectedDayKey = v),
+                              ),
+                            ),
+                            Expanded(child: listContent),
+                          ],
                         );
                       },
                     ),
